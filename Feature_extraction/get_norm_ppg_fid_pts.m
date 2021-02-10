@@ -1,25 +1,25 @@
+%  Released under the GNU General Public License
+%  Copyright (C) 2021  Eoin Finnegan
+%  eoin.finnegan@eng.ox.ac.uk
+% 
+%  This program is free software: you can redistribute it and/or modify
+%  it under the terms of the GNU General Public License as published by
+%  the Free Software Foundation, either version 3 of the License, or
+%  (at your option) any later version.
+% 
+%  This program is distributed in the hope that it will be useful,
+%  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%  GNU General Public License for more details.
+% 
+%  You should have received a copy of the GNU General Public License
+%  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+function [pts, norm_ts, derivs ] = get_norm_ppg_fid_pts(PPG,config, plot_flag)
 % get_ppg_fid_pts - This function locates the fiducial points of the PPG that
 % are commonly used in BP estimation.
 %Code adapted from P.Charlton:
 %https://github.com/peterhcharlton/pulse-analyse
-%allowed_fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', 'p1pk', ...
-%    'p2pk', 'p1in', 'p2in', 'W', 'f1', 'f2', 'halfpoint', 'tangent' ...
-%   'gauss'};
 %
-%
-% LITERATURE:
-% "Assessing mental stress from the photoplethysmogram: A numerical study"
-% -- P. Charlton
-
-
-%TO DO improve peak detection by location of fiducial points (for e.g. peak
-%cannot come after the dicrotic notch and therefore we must have detected
-%the dicrotic peak).
-%TO DO -- should we be setting SQI = 0 for beats with missing fiducial
-%points?
-%TO DO -- there are a few indicies that need to be together
-function [pts, norm_ts, derivs ] = get_norm_ppg_fid_pts(PPG,config, plot_flag)
-%what fid points do we support?
 allowed_fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', 'p1pk', ...
     'p2pk', 'p1in', 'p2in', 'W', 'f1', 'f2', 'halfpoint', 'tangent' ...
     'gauss','skewed_gauss'};

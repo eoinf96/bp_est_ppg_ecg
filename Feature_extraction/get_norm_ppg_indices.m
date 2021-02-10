@@ -1,4 +1,21 @@
-% get_ppg_indices - This function computes the inicies from the PPG that
+%  Released under the GNU General Public License
+%  Copyright (C) 2021  Eoin Finnegan
+%  eoin.finnegan@eng.ox.ac.uk
+% 
+%  This program is free software: you can redistribute it and/or modify
+%  it under the terms of the GNU General Public License as published by
+%  the Free Software Foundation, either version 3 of the License, or
+%  (at your option) any later version.
+% 
+%  This program is distributed in the hope that it will be useful,
+%  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%  GNU General Public License for more details.
+% 
+%  You should have received a copy of the GNU General Public License
+%  along with this program.  If not, see <http://www.gnu.org/licenses/>. 
+function [pw_inds] = get_norm_ppg_indices(PPG,  norm_ts, norm_derivs,  plot_flag,ht, sqi_threshold)
+%get_ppg_indices - This function computes the inicies from the PPG that
 % are commonly used in BP estimation.
 %Code adapted from P.Charlton: https://github.com/peterhcharlton/RRest
 
@@ -6,7 +23,6 @@
 % Outputs : pw_inds -- a struct of pulse wave indices computed for beat located
 % in the PPG including the median value computed from beats of high signal
 % quality
-function [pw_inds] = get_norm_ppg_indices(PPG,  norm_ts, norm_derivs,  plot_flag,ht, sqi_threshold)
 narginchk(1, inf);
 PPG.norm_ts = norm_ts;
 PPG.norm_derivs = norm_derivs;

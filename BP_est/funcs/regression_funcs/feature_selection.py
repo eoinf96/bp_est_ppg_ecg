@@ -3,7 +3,7 @@ Group of functions for handling feature selection algorithms
 
 --
  Released under the GNU General Public License
- Copyright (C) 2017  Eoin Finnegan
+ Copyright (C) 2021  Eoin Finnegan
  eoin.finnegan@eng.ox.ac.uk
 
  This program is free software: you can redistribute it and/or modify

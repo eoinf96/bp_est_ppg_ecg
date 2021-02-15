@@ -24,6 +24,7 @@ from joblib import Parallel, delayed
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from funcs.regression_funcs import *
 import numpy as np
+import matplotlib.pyplot as plt
 from pickle_functions import pickle_load
 from sklearn.model_selection import LeaveOneGroupOut
 
@@ -193,7 +194,7 @@ class RegressionModel:
         from pickle_functions import pickle_save
 
         a = self.__dict__
-        if hasattr(a, "loso"):
+        if '_loso' in a:
             a.pop("_loso")
         a.pop("model")  # As also generator
         pickle_save(
@@ -207,7 +208,7 @@ class RegressionModel:
     ##############
     def get_coefficient_of_determination(self):
         ''' Compute and return coefficient of determination '''
-        if not self.y_est:
+        if self.y_est.size == 0:
             ValueError('Run model first')
         y_dash = np.mean(self.test_y)
         sum_sqared_errors = np.sum((self.test_y - self.y_est) ** 2)
@@ -218,7 +219,7 @@ class RegressionModel:
 
     def get_correlation_coefficient(self):
         ''' Compute and return correlation coefficient '''
-        if not self.y_est:
+        if self.y_est.size == 0:
             ValueError('Run model first')
         # Correlation coefficient between yest and testy
         self.correlation_coefficient = np.corrcoef(self.test_y, self.y_est)[0, 1]

@@ -63,8 +63,8 @@ def LOSOCV(
 
     if plot_flag:
         # Initialise figure to store subplot of all LOSOCV
-        n_rows = np.ceil(np.sqrt(len(mdl.MOLLIE.volunteer_list)))
-        n_cols = np.ceil(np.sqrt(len(mdl.MOLLIE.volunteer_list)))
+        n_rows = np.ceil(np.sqrt(len(mdl.dataset.volunteer_list)))
+        n_cols = np.ceil(np.sqrt(len(mdl.dataset.volunteer_list)))
         fig, ax = plt.subplots(nrows=int(n_rows), ncols=int(n_cols))
         plot_row_idx = 0
         plot_col_idx = 0
@@ -72,7 +72,7 @@ def LOSOCV(
         return_fig = False
 
     # LOSOCV loop -- loop through all subjects in the dataset
-    for volunteer_num in mdl.MOLLIE.volunteer_list:
+    for volunteer_num in mdl.dataset.volunteer_list:
         #Split dataset based on which volunteer is in the out of bag sample
         (
             mdl.train_y,
@@ -82,7 +82,7 @@ def LOSOCV(
             mdl._msk,
             mdl.train_groups,
         ) = train_test_split_LOSOCV(
-            mdl.df, mdl.MOLLIE.get_volunteer_id_name(volunteer_num)
+            mdl.df, mdl.dataset.get_volunteer_id_name(volunteer_num)
         )
 
         #Run LASSO feature selection algorithm based
@@ -98,7 +98,7 @@ def LOSOCV(
                 mdl._msk,
                 mdl.train_groups,
             ) = train_test_split_LOSOCV(
-                df, mdl.MOLLIE.get_volunteer_id_name(volunteer_num)
+                df, mdl.dataset.get_volunteer_id_name(volunteer_num)
             )
             mdl.fold_info["feature_list_rank"][volunteer_num] = {
                 df.columns.get_loc(feature_name): feature_name
@@ -137,7 +137,7 @@ def LOSOCV(
             axes.plot(mdl.test_y, "-o", label="Ground Truth", markersize=2)
             axes.plot(mdl.y_est, "-o", label="Estimated", markersize=2)
             axes.set_xticklabels([])
-            axes.set_title(mdl.MOLLIE.get_volunteer_id_name(volunteer_num))
+            axes.set_title(mdl.dataset.get_volunteer_id_name(volunteer_num))
             axes.grid()
             plot_col_idx = plot_col_idx + 1
 
@@ -185,4 +185,4 @@ def train_test_split_LOSOCV(df, volunteer_num):
 
     test_y = test_df["BP"].values
     test_x = test_df.drop(columns="BP", axis=1).values
-    return train_x, train_x, test_y, test_x, msk, train_groups
+    return train_y, train_x, test_y, test_x, msk, train_groups

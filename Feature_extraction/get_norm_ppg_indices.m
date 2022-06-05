@@ -14,7 +14,7 @@
 % 
 %  You should have received a copy of the GNU General Public License
 %  along with this program.  If not, see <http://www.gnu.org/licenses/>. 
-function [pw_inds] = get_norm_ppg_indices(PPG,  norm_ts, norm_derivs,  plot_flag,ht, sqi_threshold)
+function [pw_inds] = get_norm_ppg_indices(PPG, plot_flag,database,do_filter, sqi_threshold)
 %get_ppg_indices - This function computes the inicies from the PPG that
 % are commonly used in BP estimation.
 %Code adapted from P.Charlton: https://github.com/peterhcharlton/RRest
@@ -24,23 +24,31 @@ function [pw_inds] = get_norm_ppg_indices(PPG,  norm_ts, norm_derivs,  plot_flag
 % in the PPG including the median value computed from beats of high signal
 % quality
 narginchk(1, inf);
-PPG.norm_ts = norm_ts;
-PPG.norm_derivs = norm_derivs;
-if nargin < 4
+if nargin < 2
     plot_flag = false;
 end
-if nargin < 5
-    configs = constants_def('MOLLIE');
-    volunteer_idx = PPG.record_name(2:3);
-    volunteer_idx = str2double(volunteer_idx);
-    ht = configs.demographics.height(volunteer_idx);
+if nargin < 3 || isempty(database)
+    ht = nan;
+else
+    configs = constants_def(database);
+    if strcmp(database, 'MOLLIE')
+        volunteer_idx = PPG.record_name(2:3);
+        volunteer_idx = str2double(volunteer_idx);
+        ht = configs.demographics.height(volunteer_idx);
+    elseif strcmpi(database, 'Ambulatory')
+        %update this when the study is properly run
+        ht = configs.demographics.height;
+    end
 end
-if nargin < 6
+if nargin < 4
+    do_filter = 1;
+end
+if nargin < 5
     sqi_threshold = 0.8;
 end
 
-if ~isfield(PPG, 'fid_pts')
-    PPG.fid_pts= func.single_ppg.get_ppg_fid_pts(PPG);
+if ~isfield(PPG, 'norm_fid_pts')
+    PPG.norm_fid_pts= func.pulsew.get_ppg_fid_pts(PPG);
 end
 fid_pts = PPG.norm_fid_pts;
 
@@ -55,6 +63,19 @@ onsets = PPG.onsets;
 
 num_beats = length(PPG.peaks);
 
+%% Filter Signal
+if do_filter
+    filter.method      = {'IIR' ; 'IIR'};
+    filter.type        = {'highpass'; 'lowpass'};
+    filter.order       = [8  8];
+    filter.fc1         = [0.5, 10]; filter.fc2  = filter.fc1;
+    ts_filt =  pe.sigproc.filter.filter(PPG.ts, PPG.fs, filter);
+else
+    ts_filt = PPG.ts;
+end
+
+%% Calculate Derivatives
+s_g_filter_len = 7;
 %% Timings
 if verbose_flag
     fprintf('Cannot get ...\n')
@@ -193,6 +214,23 @@ store_dp_var      = nan(num_beats,1);
 % Second derivative feature
 store_PPG_AI = nan(num_beats,1);
 
+
+% Gaussian features -- have a rethink here
+if do_gauss
+    pw_inds.gauss_AI = nan(num_beats,1);
+    pw_inds.gauss_RI = nan(num_beats,1);
+    pw_inds.gauss_sys_dias = nan(num_beats,1);
+    pw_inds.gauss_RTT_Rubins = nan(num_beats,1);
+    pw_inds.gauss_AIx_Rubins = nan(num_beats,1);
+    pw_inds.gauss_RI_Rubins = nan(num_beats,1);
+    pw_inds.gauss_LVET = nan(num_beats,1);
+    gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
+end
+
+%
+
+
+
 % parfor beat_no = 1 : num_beats
 for beat_no = 1 : length(PPG.onsets)-1
     
@@ -201,15 +239,38 @@ for beat_no = 1 : length(PPG.onsets)-1
         continue
     end
     
+    if PPG.sqi_beat(beat_no) <sqi_threshold
+        continue        
+    end
+    %% Get curr
+    curr_els = onsets(beat_no):onsets(beat_no+1);
+    
     curr = [];
+    curr.t = PPG.t(curr_els);
+    curr.t  = curr.t - curr.t(1);
+    curr.fs = length(curr.t);
+    curr.t = curr.t / curr.t(end);
     
-    curr.ts = PPG.norm_ts{beat_no};
-    curr.fs = length(curr.ts);
-    curr.t = [0:(length(curr.ts) -1)]' /curr.fs;
+    dt = 1/curr.fs;
     
+    curr.ts = ts_filt(curr_els);
+    curr.ts = curr.ts - min(curr.ts);
+    curr.ts = curr.ts/ max(curr.ts);
+    
+    
+    % Correct for low frequency baseline drift in a single beat
+    correction_line = linspace(curr.ts(1), curr.ts(end), length(curr.ts));
+    curr.ts = curr.ts - correction_line' + curr.ts(1);
+    
+    clear correction_line
+    
+    %
+    curr.derivs.first   = func.waveform.savitzky_golay_deriv(curr.ts, 1, s_g_filter_len)./dt;     
     if curr.fs ==0
        continue 
     end
+    
+    %%
     
     pulse_amp(beat_no) = max(curr.ts);
     
@@ -276,33 +337,10 @@ for beat_no = 1 : length(PPG.onsets)-1
     
     
     
-    
-    
-    %% Liang
-    
-    
-    VPG = PPG.norm_derivs.first{beat_no};
-    if ~any(isnan([fid_pts.b.ind(beat_no),fid_pts.d.ind(beat_no) , fid_pts.c.ind(beat_no) ]),2)
-        
-        store_liang_1(beat_no) = sum(curr.ts(fid_pts.f1.ind(beat_no):fid_pts.s.ind(beat_no)).^2);
-        
-        store_liang_2(beat_no) = (curr.ts(fid_pts.b.ind(beat_no)) - curr.ts(fid_pts.d.ind(beat_no)))./(fid_pts.b.t(beat_no) - fid_pts.d.t(beat_no));
-
-        store_liang_4(beat_no) = curr.ts(fid_pts.c.ind(beat_no))./fid_pts.s.amp(beat_no);
-
-        store_liang_8(beat_no) = VPG(fid_pts.c.ind(beat_no))./fid_pts.W.amp(beat_no);
-
-        store_liang_10(beat_no) = (fid_pts.s.amp(beat_no) - curr.ts(fid_pts.c.ind(beat_no)))./(fid_pts.s.t(beat_no) - fid_pts.c.t(beat_no)); 
-    end
-    
-       
-    
-    
     %% Frequency features
     
 % - Normalised Harmonic Area (from Wang et al) - "Noninvasive cardiac output estimation using a novel PPG index"
 % - Skewness and Kurtosis from Slapnicar et al
-    curr.fs = length(curr.ts);
     if curr.fs ~=0
         [~, pw, ~, ~] = pe.sigproc.fft.fft(curr.ts, curr.fs, 1);
         [~, loc] = findpeaks(pw);
@@ -311,30 +349,20 @@ for beat_no = 1 : length(PPG.onsets)-1
 
         store_skew(beat_no) = skewness(curr.ts);
         store_kurt(beat_no) = kurtosis(curr.ts);
-
-
-        
     end
      
     %% First derivative
-        
-    %get current pulse
-    curr_els            = 1:length(PPG.norm_ts{beat_no});
+            
+    notch_loc           = fid_pts.dic.ind(beat_no);    
+    VPG = curr.derivs.first;
     
+    sys_deriv        = VPG(1:notch_loc);
+    dia_deriv        = VPG(notch_loc:end);
     
-    notch_loc           = fid_pts.dic.ind(beat_no);
-    sys_els = curr_els(curr_els < notch_loc);
-    dia_els = curr_els(curr_els > notch_loc);
-    
-    VPG = PPG.norm_derivs.first{beat_no};
-    
-    sys_deriv        = VPG(sys_els);
-    dia_deriv        = VPG(dia_els);
-    
-    store_sp_mean(beat_no) = nanmean(sys_deriv);
-    store_sp_var(beat_no)  = nanvar(sys_deriv);
-    store_dp_mean(beat_no) = nanmean(dia_deriv);
-    store_dp_var(beat_no)  = nanvar(dia_deriv);
+    store_sp_mean(beat_no) = mean(sys_deriv, 'omitnan');
+    store_sp_var(beat_no)  = var(sys_deriv, 'omitnan');
+    store_dp_mean(beat_no) = mean(dia_deriv, 'omitnan');
+    store_dp_var(beat_no)  = var(dia_deriv, 'omitnan');
     
     
     
@@ -343,6 +371,33 @@ for beat_no = 1 : length(PPG.onsets)-1
      
    if ~or(isnan(fid_pts.d.ind(beat_no)), isnan(fid_pts.b.ind(beat_no)))
        store_PPG_AI(beat_no) = curr.ts(fid_pts.d.ind(beat_no))/curr.ts(fid_pts.b.ind(beat_no));
+   end
+   
+   %% Do Gauss features here
+   
+   if do_gauss 
+        %Get g1, g2, g3, g4
+        for idx = 1:4
+            eval(['g',num2str(idx),' = gaussian([fid_pts.g',num2str(idx),'.amp(beat_no), fid_pts.g',num2str(idx),'.mu(beat_no), fid_pts.g',num2str(idx),'.sigma(beat_no)], curr.t);'])
+        end
+        systolic = g1 + g2;
+        dias = g3+g4;
+        
+        pw_inds.gauss_AI(beat_no) = max(systolic) - fid_pts.g3.amp(beat_no);
+        pw_inds.gauss_RI(beat_no) = (sum(systolic) - sum(g3))./PPG.fs;
+        pw_inds.gauss_sys_dias(beat_no) = sum(systolic)/sum(dias);
+        
+        % Get LVET
+        ds_dt = diff(systolic);
+        ds2_dt2 = diff(ds_dt);
+        ds3_dt3 = diff(ds2_dt2);
+        
+        
+        [~, loc_peaks] = findpeaks(ds3_dt3);
+        if length(loc_peaks) > 2
+            pw_inds.gauss_LVET(beat_no) = (loc_peaks(3) - loc_peaks(1))/( fs*pulse_amp(beat_no));
+        end
+   
    end
     
 end
@@ -387,6 +442,32 @@ clear sys_deriv dia_deriv sys_els dia_els
 
 
 pw_inds.PPG_AI = store_PPG_AI;
+
+%% Remaining Gauss features
+if do_gauss
+    %Rubins et al
+    pw_inds.gauss_RTT_Rubins = fid_pts.g3.mu - fid_pts.g1.mu; % Transit time of reflected wave
+    pw_inds.gauss_AIx_Rubins = (fid_pts.g1.amp - fid_pts.g2.amp)./fid_pts.g1.amp; % Augmentation index
+    pw_inds.gauss_RI_Rubins = fid_pts.g3.amp./fid_pts.g1.amp; % Reflection index
+
+    %features I made from looking at videos
+    pw_inds.gauss_amp4_amp1 = fid_pts.g4.amp./fid_pts.g1.amp;
+    pw_inds.gauss_sigma4_amp1 = fid_pts.g4.sigma./fid_pts.g1.amp;
+
+    %Add gaussian parameters as fiducial points
+    pw_inds.g1_amp = fid_pts.g1.amp;
+    pw_inds.g1_mu = fid_pts.g1.mu;
+    pw_inds.g1_sigma = fid_pts.g1.sigma;
+    pw_inds.g2_amp = fid_pts.g2.amp;
+    pw_inds.g2_mu = fid_pts.g2.mu;
+    pw_inds.g2_sigma = fid_pts.g2.sigma;
+    pw_inds.g3_amp = fid_pts.g3.amp;
+    pw_inds.g3_mu = fid_pts.g3.mu;
+    pw_inds.g3_sigma = fid_pts.g3.sigma;
+    pw_inds.g4_amp = fid_pts.g4.amp;
+    pw_inds.g4_mu = fid_pts.g4.mu;
+    pw_inds.g4_sigma = fid_pts.g4.sigma;
+end
 %% Second Derivative
 
 
@@ -426,51 +507,6 @@ catch
     end
 end
 
-% % - Amplitude of 'a' relative to pulse amplitude
-% try
-%     pw_inds.a_div_amp = fid_pts.a.amp./pulse_amp;
-% catch
-%     if verbose_flag
-%         fprintf('               - a/amp \n')
-%     end
-% end
-% 
-% % - Amplitude of 'b' relative to pulse amplitude
-% try
-%     pw_inds.b_div_amp = fid_pts.b.amp./pulse_amp;
-% catch
-%     if verbose_flag
-%         fprintf('               - b/a \n')
-%     end
-% end
-% 
-% % - Amplitude of 'c' relative to pulse amplitude
-% try
-%     pw_inds.c_div_amp = fid_pts.c.amp./pulse_amp;
-% catch
-%     if verbose_flag
-%         fprintf('               - b/amp \n')
-%     end
-% end
-% 
-% % - Amplitude of 'd' relative to pulse amplitude
-% try
-%     pw_inds.d_div_amp = fid_pts.d.amp./pulse_amp;
-% catch
-%     if verbose_flag
-%         fprintf('               - b/amp \n')
-%     end
-% end
-% 
-% % - Amplitude of 'e' relative to pulse amplitude
-% try
-%     pw_inds.e_div_amp = fid_pts.e.amp./pulse_amp;
-% catch
-%     if verbose_flag
-%         fprintf('               - b/amp \n')
-%     end
-% end
-% 
 % % - Ageing index: original
 try
     pw_inds.AGI = pw_inds.b_div_a - pw_inds.c_div_a - pw_inds.d_div_a - pw_inds.e_div_a;
@@ -529,110 +565,13 @@ end
 % - Stiffness constant
 % pw_inds.k = fid_pts.amp.s ./ ((fid_pts.amp.s - fid_pts.amp.ms ) ./ pw_inds.pulse_amp );
 
-% - Features from Liang, Elendi et al -- the top 10 features that correlate
-% with BP
-liang_numbers = 1:10;
-for idx = liang_numbers
-    eval(['pw_inds.liang_',num2str(idx),' = nan(num_beats,1);'])
-end
+%% Set all when sqi < 0.8 to nan
+set_sqi_func = @(x) set_sqi_pw(x, PPG.sqi_beat, sqi_threshold);
 
-pw_inds.liang_1 = store_liang_1;
-
-pw_inds.liang_2 = store_liang_2;
-
-
-% 3 - Time between S and c wave
-pw_inds.liang_3 = fid_pts.s.t - fid_pts.c.t;
-
-% 5 - Time between S and d
-pw_inds.liang_5 = fid_pts.s.t - fid_pts.d.t;
-
-pw_inds.liang_4 = store_liang_4;
-
-
-% 6 - Ageing index
-pw_inds.liang_6 = (fid_pts.b.amp - fid_pts.c.amp -fid_pts.d.amp)./(fid_pts.a.amp);
-
-% 7 - Amplitude of d
-pw_inds.liang_7 = fid_pts.d.amp;
-
-pw_inds.liang_8 = store_liang_8;
-
-% 9 - Ratio of d to a
-pw_inds.liang_9 = fid_pts.d.amp./fid_pts.a.amp;
-
-
-pw_inds.liang_10 = store_liang_10;
-
-
-%% Gaussian decomposition
-if do_gauss
-    pw_inds.gauss_AI = nan(num_beats,1);
-    pw_inds.gauss_RI = nan(num_beats,1);
-    pw_inds.gauss_sys_dias = nan(num_beats,1);
-    pw_inds.gauss_RTT_Rubins = nan(num_beats,1);
-    pw_inds.gauss_AIx_Rubins = nan(num_beats,1);
-    pw_inds.gauss_RI_Rubins = nan(num_beats,1);
-    pw_inds.gauss_LVET = nan(num_beats,1);
-    
-    gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
-    
-    for pulse_no = 1 : num_beats
-        
-        curr = [];
-        %get current pulse
-        curr_els = onsets(pulse_no):onsets(pulse_no+1);
-        curr.t = PPG.t(curr_els);
-        curr.t = curr.t - curr.t(1);
-        %Get g1, g2, g3, g4
-        for idx = 1:4
-            eval(['g',num2str(idx),' = gaussian([fid_pts.g',num2str(idx),'.amp(pulse_no), fid_pts.g',num2str(idx),'.mu(pulse_no), fid_pts.g',num2str(idx),'.sigma(pulse_no)], curr.t);'])
-        end
-        systolic = g1 + g2;
-        dias = g3+g4;
-        
-        pw_inds.gauss_AI(pulse_no) = max(systolic) - fid_pts.g3.amp(pulse_no);
-        pw_inds.gauss_RI(pulse_no) = (sum(systolic) - sum(g3))./PPG.fs;
-        pw_inds.gauss_sys_dias(pulse_no) = sum(systolic)/sum(dias);
-        
-        % Get LVET
-        ds_dt = diff(systolic);
-        ds2_dt2 = diff(ds_dt);
-        ds3_dt3 = diff(ds2_dt2);
-        
-        
-        [~, loc_peaks] = findpeaks(ds3_dt3);
-        if length(loc_peaks) > 2
-            pw_inds.gauss_LVET(pulse_no) = (loc_peaks(3) - loc_peaks(1))/( fs*pulse_amp(pulse_no));
-        end
-        
-    end
-    
-    %Rubins et al
-    pw_inds.gauss_RTT_Rubins = fid_pts.g3.mu - fid_pts.g1.mu; % Transit time of reflected wave
-    pw_inds.gauss_AIx_Rubins = (fid_pts.g1.amp - fid_pts.g2.amp)./fid_pts.g1.amp; % Augmentation index
-    pw_inds.gauss_RI_Rubins = fid_pts.g3.amp./fid_pts.g1.amp; % Reflection index
-    
-    %features I made from looking at videos
-    pw_inds.gauss_amp4_amp1 = fid_pts.g4.amp./fid_pts.g1.amp;
-    pw_inds.gauss_sigma4_amp1 = fid_pts.g4.sigma./fid_pts.g1.amp;
-
-    %Add gaussian parameters as fiducial points
-    pw_inds.g1_amp = fid_pts.g1.amp;
-    pw_inds.g1_mu = fid_pts.g1.mu;
-    pw_inds.g1_sigma = fid_pts.g1.sigma;
-    pw_inds.g2_amp = fid_pts.g2.amp;
-    pw_inds.g2_mu = fid_pts.g2.mu;
-    pw_inds.g2_sigma = fid_pts.g2.sigma;
-    pw_inds.g3_amp = fid_pts.g3.amp;
-    pw_inds.g3_mu = fid_pts.g3.mu;
-    pw_inds.g3_sigma = fid_pts.g3.sigma;
-    pw_inds.g4_amp = fid_pts.g4.amp;
-    pw_inds.g4_mu = fid_pts.g4.mu;
-    pw_inds.g4_sigma = fid_pts.g4.sigma;
-end
+pw_inds = structfun(set_sqi_func, pw_inds, 'UniformOutput', false);
 
 PPG.pw_inds = pw_inds;
+
 %%
 if plot_flag
     
@@ -679,106 +618,11 @@ end
 
 end
 
+%% Local funcs
 
-
-
-function deriv = savitzky_golay(sig, deriv_no, win_size)
-
-%% assign coefficients
-% From: https://en.wikipedia.org/wiki/Savitzky%E2%80%93Golay_filter#Tables_of_selected_convolution_coefficients
-% which are calculated from: A., Gorry (1990). "General least-squares smoothing and differentiation by the convolution (Savitzky?Golay) method". Analytical Chemistry. 62 (6): 570?3. doi:10.1021/ac00205a007.
-
-switch deriv_no
-    case 0
-        % - smoothing
-        switch win_size
-            case 5
-                coeffs = [-3, 12, 17, 12, -3];
-                norm_factor = 35;
-            case 7
-                coeffs = [-2, 3, 6, 7, 6, 3, -2];
-                norm_factor = 21;
-            case 9
-                coeffs = [-21, 14, 39, 54, 59, 54, 39, 14, -21];
-                norm_factor = 231;
-            otherwise
-                error('Can''t do this window size')
-        end
-    case 1
-        % - first derivative
-        switch win_size
-            case 5
-                coeffs = -2:2;
-                norm_factor = 10;
-            case 7
-                coeffs = -3:3;
-                norm_factor = 28;
-            case 9
-                coeffs = -4:4;
-                norm_factor = 60;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 2
-        % - second derivative
-        switch win_size
-            case 5
-                coeffs = [2,-1,-2,-1,2];
-                norm_factor = 7;
-            case 7
-                coeffs = [5,0,-3,-4,-3,0,5];
-                norm_factor = 42;
-            case 9
-                coeffs = [28,7,-8,-17,-20,-17,-8,7,28];
-                norm_factor = 462;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 3
-        % - third derivative
-        switch win_size
-            case 5
-                coeffs = [-1,2,0,-2,1];
-                norm_factor = 2;
-            case 7
-                coeffs = [-1,1,1,0,-1,-1,1];
-                norm_factor = 6;
-            case 9
-                coeffs = [-14,7,13,9,0,-9,-13,-7,14];
-                norm_factor = 198;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 4
-        % - fourth derivative
-        switch win_size
-            case 7
-                coeffs = [3,-7,1,6,1,-7,3];
-                norm_factor = 11;
-            case 9
-                coeffs = [14,-21,-11,9,18,9,-11,-21,14];
-                norm_factor = 143;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    otherwise
-        error('Can''t do this order of derivative')
+function pw_out = set_sqi_pw(pw_in, sqi, sqi_threshold)
+   pw_out = pw_in;
+   pw_out(sqi < sqi_threshold) = nan;
 end
 
-if rem(deriv_no, 2) == 1
-    coeffs = -1*coeffs;
-end
-
-A = [1,0];
-filtered_sig = filter(coeffs, A, sig);
-s=length(sig);
-half_win_size = floor(win_size*0.5);
-deriv=[filtered_sig(win_size)*ones(half_win_size,1);filtered_sig(win_size:s);filtered_sig(s)*ones(half_win_size,1)];
-deriv = deriv/norm_factor;
-
-end
 

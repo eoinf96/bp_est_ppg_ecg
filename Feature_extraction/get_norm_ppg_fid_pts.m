@@ -14,29 +14,31 @@
 % 
 %  You should have received a copy of the GNU General Public License
 %  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-function [pts, norm_ts, derivs ] = get_norm_ppg_fid_pts(PPG,config, plot_flag)
+function [pts ] = get_norm_ppg_fid_pts(PPG,config, plot_flag)
 % get_ppg_fid_pts - This function locates the fiducial points of the PPG that
 % are commonly used in BP estimation.
 %Code adapted from P.Charlton:
 %https://github.com/peterhcharlton/pulse-analyse
 %
 allowed_fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', 'p1pk', ...
-    'p2pk', 'p1in', 'p2in', 'W', 'f1', 'f2', 'halfpoint', 'tangent' ...
+    'p2pk', 'p1in', 'p2in', 'W', 'f1', 'f2', 'halfpoint', 'tangent', ...
     'gauss','skewed_gauss'};
 narginchk(1, inf)
 if nargin < 2 || isempty(config)
     % setup variables to store fiducial point indices
-    fid_pt_names = allowed_fid_pt_names;
-else
-    if isfield(config, 'fid_pt_names')
-        fid_pt_names = config.fid_pt_names;
-    else
-        fid_pt_names =config;
-    end
+    config = struct();
 end
 if nargin < 3
     plot_flag  = false;
 end
+
+default_config.fid_pt_names = allowed_fid_pt_names(1:end-2);
+default_config.gauss_continue_points = 0;
+default_config.do_e_for_dic = false;
+default_config.do_filter = 1;
+
+config = func.aux_functions.update_with_default_opts(config, default_config);
+fid_pt_names = config.fid_pt_names;
 
 %Are there any unsupported fiducial points?
 [~,ia] = intersect(fid_pt_names,allowed_fid_pt_names, 'stable');
@@ -65,8 +67,7 @@ else
     do_skewed_gauss = 0;
 end
 %% Filter Signal
-do_filter = 1; % PPG should be filtered from the preprocess_PPG code
-if do_filter
+if config.do_filter
     filter.method      = {'IIR' ; 'IIR'};
     filter.type        = {'highpass'; 'lowpass'};
     filter.order       = [8  8];
@@ -77,7 +78,7 @@ else
 end
 
 %% Calculate Derivatives
-s_g_filter_len = 9;
+s_g_filter_len = 7;
 
 %% Identify Fiducial Points, and Calculate Fiducial Point Timings and Amplitudes
 
@@ -121,13 +122,14 @@ for fid_pt_no = 1 : length(fid_pt_names)
     eval(['pts.' fid_pt_names{fid_pt_no} '.t = nan(num_beats,1);'])
 end
 
+%% For dicrotic notch detection
+dic_vals.T = ones(num_beats,1); 
+dic_vals.Tau_func = @(t, t_peak, T)(t - t_peak)/(T - t_peak);
+dic_vals.most_recent_t_systole = cell(num_beats, 1);
+dic_vals.num_beats_average = 10;
+dic_vals.Beta = 5;
 
-norm_ts = cell(num_beats,1);
-norm_fs = nan(num_beats,1);
-derivs.first = cell(num_beats,1);
-derivs.second = cell(num_beats,1);
-derivs.third = cell(num_beats,1);
-derivs.fourth = cell(num_beats,1);
+
 %% cycle through each pulse wave
 % parfor pulse_no = 1 : length(PPG.onsets)-1
 for pulse_no = 1 : num_beats
@@ -146,7 +148,7 @@ for pulse_no = 1 : num_beats
     curr = [];
     curr.t = PPG.t(curr_els);
     curr.t  = curr.t - curr.t(1);
-    curr.fs = PPG.fs * curr.t(end);
+    curr.fs = length(curr.t);
     curr.t = curr.t / curr.t(end);
     
     dt = 1/curr.fs;
@@ -163,19 +165,13 @@ for pulse_no = 1 : num_beats
     
     clear correction_line
     
-    
-    curr.derivs.first = savitzky_golay(curr.ts, 1, s_g_filter_len)./dt;
-    curr.derivs.second = savitzky_golay(curr.derivs.first, 1, s_g_filter_len)./dt;
-    curr.derivs.third = savitzky_golay(curr.derivs.second, 1, s_g_filter_len)./dt;
-    curr.derivs.fourth = savitzky_golay(curr.derivs.third, 1, s_g_filter_len)./dt;
-    
-    
-    norm_ts{pulse_no} = curr.ts;
-    derivs.first{pulse_no} = curr.derivs.first;
-    derivs.second{pulse_no} = curr.derivs.second;
-    derivs.third{pulse_no} = curr.derivs.third;
-    derivs.fourth{pulse_no} = curr.derivs.fourth;
-    
+    %
+    curr.derivs.first   = func.waveform.savitzky_golay_deriv(curr.ts, 1, s_g_filter_len)./dt; 
+    curr.derivs.second  = func.waveform.savitzky_golay_deriv(curr.ts, 2, s_g_filter_len)./dt./dt; 
+    curr.derivs.third   = func.waveform.savitzky_golay_deriv(curr.ts, 3, s_g_filter_len)./dt./dt./dt; 
+    curr.derivs.fourth  = func.waveform.savitzky_golay_deriv(curr.ts, 4, s_g_filter_len)./dt./dt./dt./dt; 
+    %
+
     
     %% Identify fiducial points
     
@@ -270,7 +266,7 @@ for pulse_no = 1 : num_beats
     %%%%%%%%START%%%%%%%%
     if flags.do_p1pk || flags.do_p1in
         % find p1 -- early systolic peak
-        p1_buffer = floor(buffer_p1 .* fs);  % in samples
+        p1_buffer = floor(buffer_p1 .* PPG.fs);  % in samples
         temp_p1 = func.pulsew.identify_p1(curr, store_b(pulse_no), p1_buffer);
     else
         temp_p1 = [];
@@ -313,39 +309,74 @@ for pulse_no = 1 : num_beats
         
         %%%%%%%%START%%%%%%%%
         if flags.do_dic
+            % Dicrotic notch detection by Balmer et al
+            %Can maybe toggle based on if MIMIC or not
+            
             % find dic -- Need to find and implement other algorithms for
             % detecting the dicrotic notch -- This is the algorithm recommended
             % by Elgendi and is used by Mok Ahn et al
             
-            %Cant have dicrotic notch before the systlic peak -- need to
+            %Cant have dicrotic notch before the sysotlic peak -- need to
             %check though as the systolic peak may be wrong
-            if store_e(pulse_no) < store_s(pulse_no)
-                try
-                    if store_dic(pulse_no-1) < store_f2(pulse_no)
-                        store_dic(pulse_no) = store_dic(pulse_no-1);
-                    else
-                        store_dic(pulse_no) = nan;
-                    end
-                catch
-                    store_dic(pulse_no) = nan;
-                end
-            else
-                store_dic(pulse_no) = store_e(pulse_no);
+%             if store_e(pulse_no) < store_s(pulse_no)
+%                 try
+%                     if store_dic(pulse_no-1) < store_f2(pulse_no)
+%                         store_dic(pulse_no) = store_dic(pulse_no-1);
+%                     else
+%                         store_dic(pulse_no) = nan;
+%                     end
+%                 catch
+%                     store_dic(pulse_no) = nan;
+%                 end
+%             else
+%                 store_dic(pulse_no) = store_e(pulse_no);
+%             end
+           
+            t_peak = curr.t(store_s(pulse_no));
+            try
+            curr.Tau = dic_vals.Tau_func(curr.t, t_peak, dic_vals.T(pulse_no));
+            catch
+                a=1;
             end
-            
-            
-        end
-        %%%%%%%%
+            mat_most_recent_t_systole = cell2mat(dic_vals.most_recent_t_systole);
+            if length(mat_most_recent_t_systole) < dic_vals.num_beats_average
+                t_w_max = 0.45 - 0.1/dic_vals.T(pulse_no);
+            else
+                % Need to sort this out -- what if t_sys is wrong?
+                t_w_max = mean(mat_most_recent_t_systole(end-(dic_vals.num_beats_average-1):end));
+            end
+            Tau_w_max = dic_vals.Tau_func(t_w_max, t_peak, dic_vals.T(pulse_no));
+            dic_vals.alpha = (dic_vals.Beta * Tau_w_max  - 2* Tau_w_max +1)/(1 - Tau_w_max );
+            dic_vals.alpha = min(max(dic_vals.alpha, 1.5), 4.5);
+            curr.w = zeros(size(curr.ts));
         
-        %         % Adjust peak -- the peak cannot come after the dicrotic notch --
-        %         % so set to be the highest peak before the dicrotic notch -- this
-        %         % will need to be adapted once we discuss where the peak is when 3
-        %         % are found.
-        %         if flags.do_s
-        %             if store_dic(pulse_no) < store_s(pulse_no)
-        %                 store_s(pulse_no) =  adjust_peak(curr.ts, store_s(pulse_no),store_dic(pulse_no) );
-        %             end
-        %         end
+            loc_start = store_s(pulse_no);
+
+            curr.w(loc_start:end) = curr.Tau(loc_start:end).^(dic_vals.alpha - 1)  .* (1 - curr.Tau(loc_start:end)).^(dic_vals.Beta -1);
+
+            %0.6T limit -- This is an upper limit of the time to systole
+            %as discussed in more depth in the identify_e.m function
+            curr.w(round(0.6*(length(curr.ts))):end) = 0;
+
+%             [peak_val,loc_notch]= findpeaks(curr.derivs.second .* curr.w);
+            weighted_deriv = curr.derivs.second .* curr.w;
+            loc_notch = func.waveform.find_pks_trs(weighted_deriv, 'pks');
+            peak_val = weighted_deriv(loc_notch);
+            if ~isempty(loc_notch)
+                [~, i_loc_notch] = max(peak_val); %%% he maximum peak??
+                store_dic(pulse_no) = loc_notch(i_loc_notch);
+                
+                %Update most recent t_sys
+                t_w_max = curr.t(store_dic(pulse_no));
+                dic_vals.most_recent_t_systole{pulse_no} = t_w_max;
+            end
+            %Can also move the notch to the point of VPG closest to 0. Not
+            %done here but check Balmer_notch_detection for implementation.
+        end
+        
+        
+        %%%%%%%%
+
         
         %%%%%%%%START%%%%%%%%
         if flags.do_dia
@@ -355,7 +386,7 @@ for pulse_no = 1 : num_beats
             %         store_dia(pulse_no) =
             if isempty(temp_dia)
                 pks = func.waveform.find_pks_trs(curr.derivs.first, 'pks');
-                temp_dia = pks(find(pks > store_e(pulse_no), 1, 'first'));
+                temp_dia = pks(find(pks > store_dic(pulse_no), 1, 'first'));
                 if ~isempty(temp_dia)
                     store_dia(pulse_no) = temp_dia;
                 end
@@ -507,12 +538,15 @@ end
 
 %% Add Gaussian profiles
 
-
-
 do_plot = 0;
-do_normalise = 1;
+gaussparams.do_normalise = 1;
+if ~isfield(config, 'gauss_continue_points')
+    gaussparams.continue_points = 0;
+else
+    gaussparams.continue_points = config.gauss_continue_points;
+end
 if do_gauss
-    gauss_pts = func.pulsew.gaussian_model(ts_filt, PPG.t, onsets, sqi_beat, do_normalise, do_plot);
+    gauss_pts = func.pulsew.gaussian_model(ts_filt, PPG.t, onsets, sqi_beat, gaussparams, do_plot);
     f = fieldnames(gauss_pts);
     for i = 1:length(f)
         pts.(f{i}) = gauss_pts.(f{i});
@@ -520,7 +554,7 @@ if do_gauss
 end
 
 if do_skewed_gauss
-    skew_gauss_pts = func.pulsew.skewed_gaussian_model(ts_filt, PPG.t, onsets, sqi_beat, do_normalise, do_plot);
+    skew_gauss_pts = func.pulsew.skewed_gaussian_model(ts_filt, PPG.t, onsets, sqi_beat, gaussparams, do_plot);
     f = fieldnames(skew_gauss_pts);
     for i = 1:length(f)
         pts.(f{i}) = skew_gauss_pts.(f{i});
@@ -546,7 +580,7 @@ end
 %     if any(~good_loc)
 %        a=1;
 %     end
-% %     include_pulse(~good_loc) = false;
+%     include_pulse(~good_loc) = false;
 %     curr_temp_el=curr_temp_el(good_loc);
 %
 %
@@ -610,8 +644,7 @@ if plot_flag
     colours = constants_def('Colors');
     
     
-    good_beats = include_pulse;
-    
+    good_beats = PPG.sqi_beat > 0.8;
     time = PPG.t;
     num_subplots = 4;
     
@@ -689,171 +722,52 @@ if plot_flag
     
     linkaxes(ax, 'x')
     
-    bold_figure;
     
-    %% Plot 2 - Histogram of all points
-    pulse_no = 1;
-    func.pulsew.plot_ppg_indices(PPG, pulse_no,   1)
-    %% Plot 3
-    
-    pt_names_plt = fieldnames(pts);
-    
-    constants_def;
-    
-    %First work out number of rows and columns
-    num_rows = ceil(sqrt(numel(pt_names_plt)));
-    num_columns = ceil(sqrt(numel(pt_names_plt)));
-    figure
-    
-    for pt_name_no = 1 : numel(pt_names_plt)
-        subplot(num_rows, num_columns, pt_name_no)
-        eval(['curr_temp_el = pts.',fid_pt_names{pt_name_no}, '.ind;'])
-        %Remove nans
-        curr_temp_el(isnan(curr_temp_el)) = [];
-        % - amplitude of fiducial point
-        if sum(strcmp(fid_pt_names{pt_name_no}, {'s','dia','dic','p1pk','p1in','p2pk','p2in','f1','f2', 'halfpoint', 'tangent'}))
-            eval(['amp = pts.',fid_pt_names{pt_name_no}, '.amp;'])
-            
-        elseif sum(strcmp(fid_pt_names{pt_name_no}, {'a','b','c','d','e','f'}))
-            amp = PPG.derivs.second_d(curr_temp_el);
-            
-        elseif sum(strcmp(fid_pt_names{pt_name_no}, {'W'}))
-            amp = PPG.derivs.first_d(curr_temp_el);
-        else
-            continue
-        end
-        
-        histogram(amp, 'FaceColor', colours.blue)
-        title(pt_names_plt{pt_name_no})
-    end
-    %     if up.options.normalise_pw
-    %         suptitle('NOTE: Pulse Wave is normalised')
-    %     else
-    %         suptitle('Pulse Wave is not normalised')
-    %     end
-    
-    %     func.plot.tightfig();
-    set(findobj(gcf,'type','axes'),'FontName','Arial','FontSize',10,'FontWeight','Bold', 'LineWidth', 0.6);
-    
+%     %% Plot 2 - Histogram of all points
+%     pulse_no = 1;
+%     func.pulsew.plot_ppg_indices(PPG, pulse_no,   1)
+%     %% Plot 3
+%     
+%     pt_names_plt = fieldnames(pts);
+%     
+%     constants_def;
+%     
+%     %First work out number of rows and columns
+%     num_rows = ceil(sqrt(numel(pt_names_plt)));
+%     num_columns = ceil(sqrt(numel(pt_names_plt)));
+%     figure
+%     
+%     for pt_name_no = 1 : numel(pt_names_plt)
+%         subplot(num_rows, num_columns, pt_name_no)
+%         eval(['curr_temp_el = pts.',fid_pt_names{pt_name_no}, '.ind;'])
+%         %Remove nans
+%         curr_temp_el(isnan(curr_temp_el)) = [];
+%         % - amplitude of fiducial point
+%         if sum(strcmp(fid_pt_names{pt_name_no}, {'s','dia','dic','p1pk','p1in','p2pk','p2in','f1','f2', 'halfpoint', 'tangent'}))
+%             eval(['amp = pts.',fid_pt_names{pt_name_no}, '.amp;'])
+%             
+%         elseif sum(strcmp(fid_pt_names{pt_name_no}, {'a','b','c','d','e','f'}))
+%             amp = PPG.derivs.second_d(curr_temp_el);
+%             
+%         elseif sum(strcmp(fid_pt_names{pt_name_no}, {'W'}))
+%             amp = PPG.derivs.first_d(curr_temp_el);
+%         else
+%             continue
+%         end
+%         
+%         histogram(amp, 'FaceColor', colours.blue)
+%         title(pt_names_plt{pt_name_no})
+%     end
+%     %     if up.options.normalise_pw
+%     %         suptitle('NOTE: Pulse Wave is normalised')
+%     %     else
+%     %         suptitle('Pulse Wave is not normalised')
+%     %     end
+%     
+%     %     func.plot.tightfig();
+%     set(findobj(gcf,'type','axes'),'FontName','Arial','FontSize',10,'FontWeight','Bold', 'LineWidth', 0.6);
+%     
 end
-
-
-end
-
-
-function deriv = savitzky_golay(sig, deriv_no, win_size)
-
-%% assign coefficients
-% From: https://en.wikipedia.org/wiki/Savitzky%E2%80%93Golay_filter#Tables_of_selected_convolution_coefficients
-% which are calculated from: A., Gorry (1990). "General least-squares smoothing and differentiation by the convolution (Savitzky?Golay) method". Analytical Chemistry. 62 (6): 570?3. doi:10.1021/ac00205a007.
-
-switch deriv_no
-    case 0
-        % - smoothing
-        switch win_size
-            case 5
-                coeffs = [-3, 12, 17, 12, -3];
-                norm_factor = 35;
-            case 7
-                coeffs = [-2, 3, 6, 7, 6, 3, -2];
-                norm_factor = 21;
-            case 9
-                coeffs = [-21, 14, 39, 54, 59, 54, 39, 14, -21];
-                norm_factor = 231;
-            otherwise
-                error('Can''t do this window size')
-        end
-    case 1
-        % - first derivative
-        switch win_size
-            case 5
-                coeffs = -2:2;
-                norm_factor = 10;
-            case 7
-                coeffs = -3:3;
-                norm_factor = 28;
-            case 9
-                coeffs = -4:4;
-                norm_factor = 60;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 2
-        % - second derivative
-        switch win_size
-            case 5
-                coeffs = [2,-1,-2,-1,2];
-                norm_factor = 7;
-            case 7
-                coeffs = [5,0,-3,-4,-3,0,5];
-                norm_factor = 42;
-            case 9
-                coeffs = [28,7,-8,-17,-20,-17,-8,7,28];
-                norm_factor = 462;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 3
-        % - third derivative
-        switch win_size
-            case 5
-                coeffs = [-1,2,0,-2,1];
-                norm_factor = 2;
-            case 7
-                coeffs = [-1,1,1,0,-1,-1,1];
-                norm_factor = 6;
-            case 9
-                coeffs = [-14,7,13,9,0,-9,-13,-7,14];
-                norm_factor = 198;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    case 4
-        % - fourth derivative
-        switch win_size
-            case 7
-                coeffs = [3,-7,1,6,1,-7,3];
-                norm_factor = 11;
-            case 9
-                coeffs = [14,-21,-11,9,18,9,-11,-21,14];
-                norm_factor = 143;
-            otherwise
-                error('Can''t do this window size')
-        end
-        
-    otherwise
-        error('Can''t do this order of derivative')
-end
-
-if rem(deriv_no, 2) == 1
-    coeffs = -1*coeffs;
-end
-
-A = [1,0];
-filtered_sig = filter(coeffs, A, sig);
-s=length(sig);
-half_win_size = floor(win_size*0.5);
-deriv=[filtered_sig(win_size)*ones(half_win_size,1);filtered_sig(win_size:s);filtered_sig(s)*ones(half_win_size,1)];
-deriv = deriv/norm_factor;
-
-end
-
-
-function peak = adjust_peak(pulse, peak, e)
-%find the peaks in pulse
-pks = func.waveform.find_pks_trs(pulse, 'pk');
-
-%select the peak that is highest before e
-rel_pks  = pks(pks < e);
-if isempty(rel_pks)
-    return
-end
-
-[~, max_el] = max(pulse(rel_pks));
-peak = rel_pks(max_el);
 
 
 end

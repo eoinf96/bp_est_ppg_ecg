@@ -21,7 +21,7 @@ function [pts] = gaussian_model(ts,...
                                 t,...
                                 onsets,...
                                 sqi_beat,...
-                                do_normalise,...
+                                params,...
                                 do_plot)
 % This function loops through each PPG beat and fits the sum of four
 % gaussian model to each beat
@@ -37,9 +37,13 @@ function [pts] = gaussian_model(ts,...
 % Outputs:
 %       pts -- struct containing amp, sigma and mu of each gaussian for
 %       each pulse
-if nargin < 5
-   do_normalise = false; 
+if nargin < 5 || isempty(params)
+    params = struct();
 end
+default_params.do_normalise = false; 
+default_params.continue_points = true; %Whether we attempt to force consistency by using previous starting points
+params = func.aux_functions.update_with_default_opts(params, default_params);
+
 if nargin < 6
    do_plot = false; 
 end
@@ -59,23 +63,28 @@ gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
 
 
 %initial parameters to start optimisation from
-sigma_guess = 0.05;
-if do_normalise
-    standard_guess = [1/2, 1/5, sigma_guess, ...
-            1/2, 2*1/5, sigma_guess,...
-            1/2, 3*1/5, sigma_guess,...
-            1/2, 4*1/5, sigma_guess];
+if params.do_normalise
+    sigma_guess = 0.01;
+else
+    sigma_guess = median(diff(t(onsets)))/100;
 end
 
+standard_guess = [1/1., 1/5, sigma_guess, ...
+        1/3, 2*1/5, sigma_guess,...
+        1/4, 3*1/5, sigma_guess,...
+        1/6, 4*1/5, sigma_guess];
+
+       
 %Store containing RMSE and normalised RMSE values of each beat
 rmse_error = nan(num_beats,1);
-nrmse_error = nan(num_beats,1);
 %% Run loop
 for pulse_no = 1 : num_beats
-    
+%     tic
     if sqi_beat(pulse_no) < 0.8
         continue
     end
+    
+    %% Get pulse
     
     curr = [];
     %get current pulse
@@ -84,10 +93,14 @@ for pulse_no = 1 : num_beats
     curr.t = t(curr_els);
     curr.t = curr.t - curr.t(1);
     
+    % Correct for low frequency baseline drift in a single beat
+    correction_line = linspace(curr.ts(1), curr.ts(end), length(curr.ts));
+    curr.ts = curr.ts - correction_line' + curr.ts(1);
+    
     %Normalise
     curr.ts_norm = curr.ts - min(curr.ts);
     curr.ts_norm = curr.ts_norm /max(curr.ts_norm);
-    if do_normalise
+    if params.do_normalise
         %Normalise time
         curr.t = curr.t - min(curr.t);
         curr.t = curr.t /max(curr.t);
@@ -95,63 +108,63 @@ for pulse_no = 1 : num_beats
     
     
     %Initial guess at params
-    if ~do_normalise
+    if ~params.do_normalise
         t_range = curr.t(end);
-        standard_guess = [1/2, t_range/5, sigma_guess, ...
-            1/2, 2*t_range/5, sigma_guess,...
-            1/2, 3*t_range/5, sigma_guess,...
-            1/2, 4*t_range/5, sigma_guess];
+        standard_guess = [1/1.1, 0.8*t_range/5, sigma_guess, ...
+            1/3, 2*t_range/5, sigma_guess,...
+            1/4, 3*t_range/5, sigma_guess,...
+            1/6, 4*t_range/5, sigma_guess];
     end
     
-    
-    if pulse_no == 1
+    %% fit using previous opt as starting point
+    if ~exist('p_opt', 'var')
         p_opt = standard_guess;
     end
-    
-    use_standard = 0;
-    
-    try        
-        p_opt_prev = local_fit_model(p_opt,curr.t, curr.ts_norm);
-    catch
-        %Error in fit using old parameters
-        fprintf('Error')
-        use_standard =1;
-        p_opt_prev = p_opt;
+    if params.continue_points
+        use_standard = 0;
+        
+        try
+            p_opt_prev = local_fit_model(p_opt,curr.t, curr.ts_norm);
+        catch ME
+            %Error in fit
+            fprintf(sprintf('Error: %s \n',ME.message ))
+            use_standard =1;
+            p_opt_prev = p_opt;
+        end
+    else
+        use_standard = 1;
     end
-    
-    try 
+    %% Fit using standard start
+    try
         p_opt_stand = local_fit_model(standard_guess,curr.t, curr.ts_norm);
-    catch
+    catch ME
         %Error in fit
-        fprintf('Error')
+        fprintf(sprintf('Error: %s \n',ME.message ))
         if use_standard
             continue
         end
         p_opt_stand = standard_guess;
     end
-    
-    
-    %Compare the guesses using previous and standard guess
+    %% Compare the guesses using previous and standard guess
     if use_standard ==1
         p_opt = p_opt_stand;
+        rmse_error(pulse_no)=  get_error(p_opt, curr.t, curr.ts_norm); 
     else
         %Compare RMSE values
-        [RMSE_prev, NRMSE_prev] = get_error(p_opt_prev, curr.t, curr.ts_norm);
-        [RMSE_stand, NRMSE_stand] = get_error(p_opt_stand, curr.t, curr.ts_norm);
+        [RMSE_prev] = get_error(p_opt_prev, curr.t, curr.ts_norm);
+        [RMSE_stand] = get_error(p_opt_stand, curr.t, curr.ts_norm);
         
         if RMSE_prev < RMSE_stand
             p_opt = p_opt_prev;
             rmse_error(pulse_no)=  RMSE_prev; 
-            nrmse_error(pulse_no)=  NRMSE_prev; 
         else
             p_opt = p_opt_stand;
             rmse_error(pulse_no)=  RMSE_stand; 
-            nrmse_error(pulse_no)=  NRMSE_stand; 
         end
     end
     
     
-    
+    %% Assign new points
     
     for idx = 1:length(names)
         eval(['pts.',names{idx},'.amp(pulse_no) = p_opt(',num2str(3*(idx-1)+1),');'])
@@ -176,11 +189,16 @@ for pulse_no = 1 : num_beats
         plot(curr.t, overall, 'k--', 'LineWidth', 3);
     end
     close
-    
+%     toc
 end
 
+error_threshold = 0.03; % have slightly increased the error threshold to not be so strict
+set_rmse_gauss_func = @(x) set_rmse_gauss(x, rmse_error, error_threshold);
+pts = structfun(set_rmse_gauss_func, pts, 'UniformOutput', false);
+
 pts.gauss_error = rmse_error;
-pts.ngauss_error = nrmse_error;
+
+
 
 end
 
@@ -189,8 +207,8 @@ function p_opt = local_fit_model(p0,t, ts)
 % This function runs the model fitting
 func_in_line = @(p, x) get_overall(p, x);
 lb = zeros(1,12);
-ub = repmat([1, inf, inf], 1,4);
-options = optimoptions(@lsqcurvefit,'Algorithm','levenberg-marquardt');
+ub = repmat([1, 2, inf], 1,4);
+options = optimoptions(@lsqcurvefit,'Algorithm','levenberg-marquardt', 'Display','off');%, 'UseParallel', true);
 p_opt = lsqcurvefit(func_in_line,p0, t,ts,lb,ub,options);
 end
 
@@ -209,15 +227,24 @@ if mu_1 < mu_2 && mu_2 < mu_3 && mu_3 < mu_4
     modelfun = @(b,x) gaussian(b(1:3), x(:,1)) + gaussian(b(4:6), x(:,1))+ gaussian(b(7:9), x(:,1))+ gaussian(b(10:12), x(:,1));
     out = modelfun(b, t);
 else
-    out = 1*10^(28)* ones(size(t));
+    out = 1*10^(28)* ones(size(t)); % Big number
 end
 end
 
 
-function [RMSE, NRMSE]= get_error(b, t, ts)
+function [RMSE]= get_error(b, t, ts)
 %This function computes the error of the fit
 est_fit = get_overall(b,t);
 RMSE = sqrt(mean((est_fit - ts).^2));
-NRMSE = RMSE./range(ts);
+% NRMSE = RMSE./range(ts);
+end
+
+
+
+function out = set_rmse_gauss(in, rmse, error_threshold)
+   out= in;
+   out.amp(rmse > error_threshold) = nan;
+   out.mu(rmse > error_threshold) = nan;
+   out.sigma(rmse > error_threshold) = nan;
 end
 

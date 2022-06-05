@@ -15,7 +15,7 @@
 %  You should have received a copy of the GNU General Public License
 %  along with this program.  If not, see <http://www.gnu.org/licenses/>. 
 function [pw_inds] = get_norm_ppg_indices(PPG, plot_flag,database,do_filter, sqi_threshold)
-%get_ppg_indices - This function computes the inicies from the PPG that
+%get_ppg_indices - This function computes the indicies from the PPG that
 % are commonly used in BP estimation.
 %Code adapted from P.Charlton: https://github.com/peterhcharlton/RRest
 

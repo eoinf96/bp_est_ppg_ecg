@@ -1,105 +1,173 @@
-function [feature_vector, feature_names] = make_ECG_feature_vector(ts, peaks)
+% Functions to fit the sum of four Gaussians to each PPG beat
+% --
+%  Released under the GNU General Public License
+%  Copyright (C) 2021  Eoin Finnegan
+%  eoin.finnegan@eng.ox.ac.uk
+%
+%  This program is free software: you can redistribute it and/or modify
+%  it under the terms of the GNU General Public License as published by
+%  the Free Software Foundation, either version 3 of the License, or
+%  (at your option) any later version.
+%
+%  This program is distributed in the hope that it will be useful,
+%  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%  GNU General Public License for more details.
+%
+%  You should have received a copy of the GNU General Public License
+%  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+function [feature_vector, feature_names] = make_ECG_feature_vector(ts, r_locs, t, params)
+%make_ECG_feature_vector - This function generates the ECG feature vector
 
-    
-scale_list = 2:2:8;
-     
-     
-if ~isempty(peaks)
+% Inputs: ts - ECG time series vector
+%         t - time vector
+%         r_locs - location of R-peaks
+%         params
+% Outputs: Feature vector and feature names
+if nargin < 3
+    t = [];
+end
+if nargin < 4
+    params = struct();
+end
+default_params.scale_list = 2:2:8;
+default_params.kmax = 17;
+default_params.do_HRV = 1;
+default_params.m = 2;
+default_params.r_factor = 0.2;
+default_params.do_HRV = 0;
+
+params = func.aux_functions.update_with_default_opts(params, default_params);
+%% Run get ECG features
+if ~isempty(r_locs)
     [mobility, complexity ] = HjorthParameters(ts);
-    fractal = Higuchi_FD(ts', 17);
+    fractal = Higuchi_FD(ts', params.kmax);
     
     p = histcounts(ts, 'Normalization', 'Probability');
     shannon_entropy = -sum(p(p>0).*log2(p(p>0)) );
-
+    
     
     % Complexity features
-    m = 2;
-    r_factor = 0.2;
-    approxEnt = approximateEntropy(ts, 'Dimension', m, 'Radius', r_factor * std(ts));
-    sampEnt = sampleEntropy(ts, m, r_factor );
-   
+    approxEnt = approximateEntropy(ts, 'Dimension', params.m, 'Radius', params.r_factor * std(ts));
+    sampEnt = sampleEntropy(ts, params.m, params.r_factor );
+    
     for scale_idx = 1:length(scale_list)
-        mseEnt(scale_idx) = multiscaleSampleEntropy( ts, m, r_factor, scale_list(scale_idx));
+        mseEnt(scale_idx) = multiscaleSampleEntropy( ts, params.m, params.r_factor, scale_list(scale_idx));
     end
     
     feature_vector = [mobility; complexity; fractal; shannon_entropy; approxEnt; sampEnt; mseEnt(:)];
+    feature_names = vertcat({'Hjorth_mobility'; 'Hjorth_complexity'; 'Fractal_dimension'; 'SE'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(scale_list)))');
 else
+    warning('R locs not supplied')
     feature_vector = nan(6+length(scale_list), 1);
 end
 
-% if do_HRV
-
-% RR.ts = t(peaks(2:end)) - t(peaks(1:end-1));
-% RR.t = t(peaks(2:end));
-% 
-% HRV_feats = func.HRV.get_HRV_features(RR.ts, RR.t);
-% HRV_feats = rmfield(HRV_feats, intersect(fieldnames(HRV_feats), {'t'; 'VLF_power';'nLF_power';'nHF_power';'T_power';'samp_entropy'; 'LF_div_HF'}));
-% feature_vector = [feature_vector; struct2array(HRV_feats)'];
-
-% feature_names = vertcat({'Mobility'; 'Complexity'; 'Fractal'; 'Shannon_Entropy'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(scale_list)))');
-feature_names = vertcat({'Hjorth_mobility'; 'Hjorth_complexity'; 'Fractal_dimension'; 'SE'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(scale_list)))');
-
-% feature_names = vertcat(feature_names, fieldnames(HRV_feats));
+if params.do_HRV && ~isempty(t)
+    
+    RR.ts = t(peaks(2:end)) - t(peaks(1:end-1));
+    RR.t = t(peaks(2:end));
+    
+    %     HRV_feats = func.HRV.get_HRV_features(RR.ts, RR.t);
+    HRV_feats = get_HRV_features(RR.ts, RR.t);
+    HRV_feats = rmfield(HRV_feats, intersect(fieldnames(HRV_feats), {'t'; 'VLF_power';'nLF_power';'nHF_power';'T_power';'samp_entropy'; 'LF_div_HF'}));
+    feature_vector = [feature_vector; struct2array(HRV_feats)'];
+    
+    feature_names = vertcat({'Mobility'; 'Complexity'; 'Fractal'; 'Shannon_Entropy'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(scale_list)))');
+    
+    
+    feature_names = vertcat(feature_names, fieldnames(HRV_feats));
+    
+end
 end
 
 
-
+%% Local functions
 function value = sampleEntropy(signal, m, r, dist_type)
-    % Error detection and defaults
-    if nargin < 3, error('Not enough parameters.'); end
-    if nargin < 4
-        dist_type = 'chebychev';
-%         fprintf('[WARNING] Using default distance method: chebychev.\n');
-    end
-    if ~isvector(signal)
-        error('The signal parameter must be a vector.');
-    end
-    if ~ischar(dist_type)
-        error('Distance must be a string.');
-    end
-    if m > length(signal)
-        error('Embedding dimension must be smaller than the signal length (m<N).');
-    end
+% Function 'sampen' computes the Sample Entropy of a given signal.        %
+%                                                                         %
+%   Input parameters:                                                     %
+%       - signal:       Signal vector with dims. [1xN]                    %
+%       - m:            Embedding dimension (m < N).                      %
+%       - r:            Tolerance (percentage applied to the SD).         %
+%       - dist_type:    (Optional) Distance type, specified by a string.  %
+%                       Default value: 'chebychev' (type help pdist for   %
+%                       further information).                             %
+%                                                                         %
+%   Output variables:                                                     %
+%       - value:        SampEn value. Since SampEn is not defined whenever%
+%                       B = 0, the output value in that case is NaN.      %
+% ----------------------------------------------------------------------- %
+%   Versions:                                                             %
+%       - 1.0:          (21/09/2018) Original script.                     %
+%       - 1.1:          (09/11/2018) Upper bound is added. Now, SampEn is %
+%                       not able to return Inf values.                    %
+% ----------------------------------------------------------------------- %
+%   Script information:                                                   %
+%       - Version:      1.0.                                              %
+%       - Author:       V. Martínez-Cagigal                               %
+%       - Date:         21/09/2018                                        %
+% ----------------------------------------------------------------------- %
+%   References:                                                           %
+%       [1]     Richman, J. S., & Moorman, J. R. (2000). Physiological    %
+%               time-series analysis using approximate entropy and sample %
+%               entropy. American Journal of Physiology-Heart and         %
+%               Circulatory Physiology, 278(6), H2039-H2049.              %
+% ----------------------------------------------------------------------- %
+% Error detection and defaults
+if nargin < 3, error('Not enough parameters.'); end
+if nargin < 4
+    dist_type = 'chebychev';
+    %         fprintf('[WARNING] Using default distance method: chebychev.\n');
+end
+if ~isvector(signal)
+    error('The signal parameter must be a vector.');
+end
+if ~ischar(dist_type)
+    error('Distance must be a string.');
+end
+if m > length(signal)
+    error('Embedding dimension must be smaller than the signal length (m<N).');
+end
+
+% Useful parameters
+signal = signal(:)';
+N = length(signal);     % Signal length
+sigma = std(signal);    % Standard deviation
+
+% Create the matrix of matches
+matches = NaN(m+1,N);
+for i = 1:1:m+1
+    matches(i,1:N+1-i) = signal(i:end);
+end
+matches = matches';
+% Check the matches for m
+d_m = pdist(matches(:,1:m), dist_type);
+if isempty(d_m)
+    % If B = 0, SampEn is not defined: no regularity detected
+    %   Note: Upper bound is returned
+    value = Inf;
+else
+    % Check the matches for m+1
+    d_m1 = pdist(matches(:,1:m+1), dist_type);
     
-    % Useful parameters
-    signal = signal(:)';
-    N = length(signal);     % Signal length
-    sigma = std(signal);    % Standard deviation
-    
-    % Create the matrix of matches
-    matches = NaN(m+1,N);
-    for i = 1:1:m+1
-        matches(i,1:N+1-i) = signal(i:end);
-    end
-    matches = matches';
-    % Check the matches for m
-    d_m = pdist(matches(:,1:m), dist_type);
-    if isempty(d_m)
-        % If B = 0, SampEn is not defined: no regularity detected
-        %   Note: Upper bound is returned
-        value = Inf;
-    else
-        % Check the matches for m+1
-        d_m1 = pdist(matches(:,1:m+1), dist_type);
-        
-        % Compute A and B
-        %   Note: logical operations over NaN values are always 0
-        B = sum(d_m  <= r*sigma);
-        A = sum(d_m1 <= r*sigma);
-        % Sample entropy value
-        %   Note: norm. comes from [nchoosek(N-m+1,2)/nchoosek(N-m,2)]
-        value = -log((A/B)*((N-m+1)/(N-m-1))); 
-    end
-    
-    % If A=0 or B=0, SampEn would return an infinite value. However, the
-    % lowest non-zero conditional probability that SampEn should
-    % report is A/B = 2/[(N-m-1)(N-m)]
-    if isinf(value)
-        % Note: SampEn has the following limits:
-        %       - Lower bound: 0
-        %       - Upper bound: log(N-m)+log(N-m-1)-log(2)
-        value = -log(2/((N-m-1)*(N-m)));
-    end
+    % Compute A and B
+    %   Note: logical operations over NaN values are always 0
+    B = sum(d_m  <= r*sigma);
+    A = sum(d_m1 <= r*sigma);
+    % Sample entropy value
+    %   Note: norm. comes from [nchoosek(N-m+1,2)/nchoosek(N-m,2)]
+    value = -log((A/B)*((N-m+1)/(N-m-1)));
+end
+
+% If A=0 or B=0, SampEn would return an infinite value. However, the
+% lowest non-zero conditional probability that SampEn should
+% report is A/B = 2/[(N-m-1)(N-m)]
+if isinf(value)
+    % Note: SampEn has the following limits:
+    %       - Lower bound: 0
+    %       - Upper bound: log(N-m)+log(N-m-1)-log(2)
+    value = -log(2/((N-m-1)*(N-m)));
+end
 end
 
 
@@ -154,7 +222,7 @@ function [mobility,complexity] = HjorthParameters(xV)
 %     This is part of the MATS-Toolkit http://eeganalysis.web.auth.gr/
 
 %========================================================================
-% Copyright (C) 2010 by Dimitris Kugiumtzis and Alkiviadis Tsimpiris 
+% Copyright (C) 2010 by Dimitris Kugiumtzis and Alkiviadis Tsimpiris
 %                       <dkugiu@gen.auth.gr>
 
 %========================================================================
@@ -175,12 +243,12 @@ function [mobility,complexity] = HjorthParameters(xV)
 %     along with this program. If not, see http://www.gnu.org/licenses/>.
 
 %=========================================================================
-% Reference : D. Kugiumtzis and A. Tsimpiris, "Measures of Analysis of Time Series (MATS): 
+% Reference : D. Kugiumtzis and A. Tsimpiris, "Measures of Analysis of Time Series (MATS):
 % 	          A Matlab  Toolkit for Computation of Multiple Measures on Time Series Data Bases",
 %             Journal of Statistical Software, in press, 2010
 
 % Link      : http://eeganalysis.web.auth.gr/
-%========================================================================= 
+%=========================================================================
 n = length(xV);
 dxV = diff([0;xV]);
 ddxV = diff([0;dxV]);
@@ -191,8 +259,8 @@ mddx2 = mean(ddxV.^2);
 mob = mdx2 / mx2;
 complexity = sqrt(mddx2 / mdx2 - mob);
 mobility = sqrt(mob);
-
-function [HFD] = Higuchi_FD(serie, Kmax) 
+end
+function [HFD] = Higuchi_FD(serie, Kmax)
 narginchk(1, inf)
 if nargin < 2
     Kmax = 282;
@@ -200,12 +268,12 @@ end
 %{
 Script for computing the Higuchi Fractal Dimension (HDF) of a signal.
 INPUT:
-    serie: is the temporal series that one wants to analyze by HDF. 
+    serie: is the temporal series that one wants to analyze by HDF.
     It must be a row vector.
     Kmax: maximum number of sub-series composed from the original. To
     determine its values, we have followed the recommendation of Doyle et
-    al at "Discriminating between elderly and young using a fractal 
-    dimension analysis of centre of pressure". 
+    al at "Discriminating between elderly and young using a fractal
+    dimension analysis of centre of pressure".
 OUTPUT:
     HFD: the HFD of the temporal series.
 PROJECT: Research Master in signal theory and bioengineering - University of Valladolid
@@ -219,7 +287,7 @@ control = ~isempty(Kmax);
 assert(control,'The user must introduce the Kmax parameter (second inpunt).');
 %% Processing:
 % Composing of the sub-series:
-N = length(serie); 
+N = length(serie);
 X = NaN(Kmax,Kmax,N);
 for k = 1:Kmax
     for m = 1:k
@@ -228,7 +296,7 @@ for k = 1:Kmax
         for i = m:k:(m + (limit*k))
             X(k,m,j) = serie(i);
             j = j + 1;
-        end  
+        end
     end
 end
 % Computing the length of each sub-serie:
@@ -248,4 +316,6 @@ end
 % Finally, we compute the HFD:
 x = 1./(1:Kmax);
 aux = polyfit(log(x),log(L),1);
-HFD = aux(1); %We only want the slope, not the independent term. 
+HFD = aux(1); %We only want the slope, not the independent term.
+
+end

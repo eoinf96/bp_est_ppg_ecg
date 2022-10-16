@@ -1,4 +1,4 @@
-function [pts, derivs ] = get_ppg_fid_pts(PPG,config, plot_flag)
+function [varargout ] = get_ppg_fid_pts(PPG,config, plot_flag)
 % This function locates the characteristic fiducial points of the PPG
 % Code adapted from P.Charlton:
 % https://github.com/peterhcharlton/pulse-analyse
@@ -8,6 +8,7 @@ function [pts, derivs ] = get_ppg_fid_pts(PPG,config, plot_flag)
 %       plot_flag: flag whether to plot a summary
 % 
 % OUTPUT: pts: struct defining the locations, timings and amplitudes of all fiducial points
+%         norm_pts: struct defining the locations, timings and amplitudes of all fiducial points using normalised PPG pulses -- only returned if config.do_normalise == 1
 %           derivs: struct of PPG derivatives
 % ---
 % Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
@@ -28,11 +29,12 @@ function [pts, derivs ] = get_ppg_fid_pts(PPG,config, plot_flag)
 % - Balmer, J., Smith, R., Pretty, C.G., Desaive, T., Shaw, G.M. and Chase, J.G., 2021. Accurate end systole detection in dicrotic notch-less arterial pressure waveforms. Journal of clinical monitoring and computing, 35(1), pp.79-88.
 %
 
+narginchk(1, inf);
 
 % What fid points we support
 allowed_fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', 'p1pk', ...
     'p2pk', 'p1in', 'p2in', 'W', 'f1', 'f2', 'halfpoint', 'tangent', ...
-    'gauss','skewed_gauss'};
+    'gauss'};
 narginchk(1, inf)
 if nargin < 2 || isempty(config)
     config = struct();
@@ -40,17 +42,15 @@ end
 if nargin < 3
     plot_flag  = false;
 end
-default_config.fid_pt_names = allowed_fid_pt_names(1:end-2);
-default_config.gauss_continue_points = 0;
-default_config.do_e_for_dic = false;
+default_config.fid_pt_names = allowed_fid_pt_names;
+default_config.gauss_continue_points = 0; % Used in Gaussian fitting
+default_config.do_e_for_dic = false; % If to use e as the location of dicrotic notch
 default_config.do_filter = 1;
-
+default_config.do_normalise = 1; % Whether to also return the normalised fiducial points
 config = func.aux_functions.update_with_default_opts(config, default_config);
 fid_pt_names = config.fid_pt_names;
 %Do we need to do Gaussian decomposition?
 config.do_gauss = any(strcmp(fid_pt_names, 'gauss'));
-%Do we need to do Skewed Gaussian decomposition?
-config.do_skewed_gauss = any(strcmp(fid_pt_names, 'skewed_gauss'));
 %% Error checks
 if isempty(PPG.ts)
     pts = [];
@@ -79,7 +79,7 @@ end
 
 %% Calculate Derivatives
 derivs = func.pulsew.get_derivs(ts_filt, PPG.fs);
-deriv_names = fieldnames(derivs);s
+deriv_names = fieldnames(derivs);
 %% Identify Fiducial Points, and Calculate Fiducial Point Timings and Amplitudes
 num_beats = length(PPG.peaks);
 
@@ -91,6 +91,22 @@ for fid_pt_no = 1 : length(allowed_fid_pt_names)
     end
 end
 starting_index = nan(num_beats,1);
+%% Initialise points store
+for fid_pt_no = 1 : length(fid_pt_names)
+    if strcmp(fid_pt_names{fid_pt_no}, 'gauss')
+        continue
+    end
+    pts.(fid_pt_names{fid_pt_no}).ind = nan(num_beats,1);
+    pts.(fid_pt_names{fid_pt_no}).amp = nan(num_beats,1);
+    pts.(fid_pt_names{fid_pt_no}).t   = nan(num_beats,1);
+    
+    if config.do_normalise
+        norm_pts.(fid_pt_names{fid_pt_no}).ind = nan(num_beats,1);
+        norm_pts.(fid_pt_names{fid_pt_no}).amp = nan(num_beats,1);
+        norm_pts.(fid_pt_names{fid_pt_no}).t   = nan(num_beats,1);
+    end
+end
+
 %% Store half amplitude of PPG pulses
 halfpoint_values = PPG.ts(PPG.onsets(1:end-1)) + ...
     0.5*(PPG.ts(PPG.peaks) -...
@@ -116,20 +132,27 @@ for pulse_no = 1 : num_beats
     curr.t = curr.t - t_start;
     curr.ts = ts_filt(curr_els);
     
-    for d_idx = 1:length(deriv_names)
-        curr.derivs.(deriv_names{d_idx}) = derivs.(deriv_names{d_idx})(curr_els);
-    end
-    %% Pre-process
-    
-    % Correct for low frequency baseline drift in a single beat -- need to
-    % remeber this when writing
+    % Correct for low frequency baseline drift in a single beat 
     correction_line = linspace(curr.ts(1), curr.ts(end), length(curr.ts));
     curr.ts = curr.ts - correction_line' + curr.ts(1);
     
     curr.ts_orig = curr.ts;    
+    
+    if config.do_normalise
+        curr.ts_norm = curr.ts - min(curr.ts);
+        curr.ts_norm = curr.ts_norm/ max(curr.ts_norm);
+        curr.fs_norm = length(curr.t);
+        curr.t_norm = curr.t / curr.t(end);
+        % Get derivatives
+        curr.derivs_norm = func.pulsew.get_derivs(curr.ts_norm, curr.fs_norm);
+    end
+    
+    for d_idx = 1:length(deriv_names)
+        curr.derivs.(deriv_names{d_idx}) = derivs.(deriv_names{d_idx})(curr_els);
+    end
     %% Identify fiducial points    
     %%%%%%%%START%%%%%%%% find f1 and f2
-    if flags.do_f1 ==1
+    if flags.do_f1
         store.f1(pulse_no) = 1;
     end
     if flags.do_f2
@@ -172,7 +195,6 @@ for pulse_no = 1 : num_beats
         rel_pks = pks(find(pks < store.W(pulse_no), 1, 'last')); % a must be before the peak of the VPG
         [~, temp_el] = max(curr.derivs.second(rel_pks));
         temp_a = rel_pks(temp_el);
-        %     clear temp_el pks rel_pks
         
         if isempty(temp_a)
             continue
@@ -207,9 +229,7 @@ for pulse_no = 1 : num_beats
         end
         store.b(pulse_no) = temp_b;
     end
-    
-    %  clear upper_bound  rel_el trs temp
-    %%%%%%%%END%%%%%%%%
+       %%%%%%%%END%%%%%%%%
     
     %%%%%%%%START%%%%%%%%
     if flags.do_p1pk || flags.do_p1in
@@ -271,7 +291,7 @@ for pulse_no = 1 : num_beats
                     store.dic(pulse_no) = store.e(pulse_no);
                 end
                 
-            else %Dicrotic notch detection by Balmer et al - used in ICU settings
+            else %Dicrotic notch detection by Balmer et al - used in ICU settings where dicrotic notch is diminished
                 t_peak = curr.t(store.s(pulse_no));
                 curr.Tau = dic_detection_vals.Tau_func(curr.t, t_peak, dic_detection_vals.T(pulse_no));
                 mat_most_recent_t_systole = cell2mat(dic_detection_vals.most_recent_t_systole);
@@ -425,139 +445,127 @@ for pulse_no = 1 : num_beats
         % store p1pk and p2pk p1pk == p1 at peak
         store.p1pk(pulse_no) = temp_p1;
         store.p2pk(pulse_no) = temp_p2;
+    end
+    
+    %% Store detected points
+    for fid_pt_no = 1 : length(fid_pt_names)
+        if strcmp(fid_pt_names{fid_pt_no}, 'gauss')
+            continue
+        end
+        curr_temp_el = store.(fid_pt_names{fid_pt_no})(pulse_no);
+        
+        %remove nans;
+        if isnan(curr_temp_el )
+            continue
+        end
+        
+        % - index of fiducial point
+        curr_temp_el = curr_temp_el + starting_index(pulse_no)-1;
+        pts.(fid_pt_names{fid_pt_no}).ind(pulse_no) = curr_temp_el;
+        
+        % - amplitude of fiducial point
+        if sum(strcmp(fid_pt_names{fid_pt_no}, {'s','dia','dic','p1pk','p1in',...
+                'p2pk','p2in','f1','f2', 'halfpoint' }))
+            amp = PPG.ts(curr_temp_el);
+        elseif strcmp(fid_pt_names{fid_pt_no}, 'tangent')
+            %Tangent amp is onset amp
+            amp = pts.f1.amp(pulse_no);
+        elseif sum(strcmp(fid_pt_names{fid_pt_no}, {'W','ms2'}))
+            amp = derivs.first(curr_temp_el);
+        elseif   sum(strcmp(fid_pt_names{fid_pt_no}, {'a','b','c','d','e','f'}))
+            amp = derivs.second(curr_temp_el);
+        else
+            error(['Unknown type: ', fid_pt_names{fid_pt_no}])
+        end
+        pts.(fid_pt_names{fid_pt_no}).amp(pulse_no) = amp;
+        
+        
+        % - timing of fiducial point
+        try
+            t = PPG.t(curr_temp_el(pulse_no));
+        catch
+            %This is for tangent that has a fractal index value
+            t = interp1(1:length(PPG.t),PPG.t,curr_temp_el);
+        end
+        pts.(fid_pt_names{fid_pt_no}).t(pulse_no) = t;
+        
+        
+        %%%% NORMALISED pulse
+        if config.do_normalise
+            curr_temp_el = curr_temp_el  -starting_index(pulse_no) +1;
+            norm_pts.(fid_pt_names{fid_pt_no}).ind(pulse_no) = curr_temp_el;
+            
+            % - amplitude of fiducial point
+            if sum(strcmp(fid_pt_names{fid_pt_no}, {'s','dia','dic','p1pk','p1in',...
+                    'p2pk','p2in','f1','f2', 'halfpoint' }))
+                amp = curr.ts_norm(curr_temp_el);
+            elseif strcmp(fid_pt_names{fid_pt_no}, 'tangent')
+                %Tangent amp is onset amp
+                amp = 0;
+            elseif sum(strcmp(fid_pt_names{fid_pt_no}, {'W','ms2'}))
+                amp =curr.derivs_norm.first(curr_temp_el);
+            elseif   sum(strcmp(fid_pt_names{fid_pt_no}, {'a','b','c','d','e','f'}))
+                amp = curr.derivs_norm.second(curr_temp_el);
+            else
+                error(['Unknown type: ', fid_pt_names{fid_pt_no}])
+            end
+            norm_pts.(fid_pt_names{fid_pt_no}).amp(pulse_no) = amp;
+            
+            % - timing of fiducial point
+            t = (curr_temp_el - 1)/curr.fs_norm;
+            %     t_start = pulse_no -1; % As each beat as been
+            norm_pts.(fid_pt_names{fid_pt_no}).t(pulse_no) = t;
+        end
+        
+        
         
     end
 end
-%% Add Gaussian profiles
-gaussparams.do_normalise = 0;
-if ~isfield(config, 'gauss_continue_points')
-    gaussparams.continue_points = 0;
-else
-    gaussparams.continue_points = config.gauss_continue_points;
-end
+%% Gaussian profiles
 if config.do_gauss
     disp('Now computing Gaussian features -- this may take some time for long recordings')
-    gauss_pts = func.pulsew.gaussian_model(ts_filt, PPG.t, PPG.onsets, PPG.sqi_beat, gaussparams);
+    gauss_pts = func.pulsew.gaussian_model(ts_filt, PPG.t, PPG.onsets, PPG.sqi_beat, config);
     f = fieldnames(gauss_pts);
+    
     for i = 1:length(f)
-        pts.(f{i}) = gauss_pts.(f{i});
+        if ~config.do_normalise
+            pts.(f{i}) = gauss_pts.(f{i});
+        else
+            norm_pts.(f{i}) = gauss_pts.(f{i});
+        end
     end
 end
-
-if config.do_skewed_gauss
-    skew_gauss_pts = func.pulsew.skewed_gaussian_model(ts_filt, PPG.t, PPG.onsets, PPG.sqi_beat, gaussparams);
-    f = fieldnames(skew_gauss_pts);
-    for i = 1:length(f)
-        pts.(f{i}) = skew_gauss_pts.(f{i});
-    end
-end
-
-%% initialise points store
-for fid_pt_no = 1 : length(fid_pt_names)
-    if strcmp(fid_pt_names{fid_pt_no}, 'gauss')
-        continue
-    end
-    eval(['pts.' fid_pt_names{fid_pt_no} '.ind = nan(num_beats,1);'])
-    eval(['pts.' fid_pt_names{fid_pt_no} '.amp = nan(num_beats,1);'])
-    eval(['pts.' fid_pt_names{fid_pt_no} '.t = nan(num_beats,1);'])
-end
-
-%we only want to keep pulses that never have a nan for an index
-include_pulse = true(num_beats,1);
-
-% store points
-for fid_pt_no = 1 : length(fid_pt_names)
-    
-    if strcmp(fid_pt_names{fid_pt_no}, 'gauss') || strcmp(fid_pt_names{fid_pt_no}, 'skewed_gauss')
-        continue
-    end
-    curr_temp_el = store.(fid_pt_names{fid_pt_no});
-    
-    
-    %remove nans;
-    good_loc = ~isnan(curr_temp_el);
-    if any(~good_loc)
-        a=1;
-    end
-    %     include_pulse(~good_loc) = false;
-    curr_temp_el=curr_temp_el(good_loc);
-    
-    
-    % - index of fiducial point
-    curr_temp_el = curr_temp_el + starting_index(good_loc)-1;
-    eval(['pts.' fid_pt_names{fid_pt_no} '.ind(good_loc) = curr_temp_el;'])
-    
-    
-    % - amplitude of fiducial point
-    if sum(strcmp(fid_pt_names{fid_pt_no}, {'s','dia','dic','p1pk','p1in',...
-            'p2pk','p2in','f1','f2', 'halfpoint' }))
-        amp = PPG.ts(curr_temp_el);
-    elseif strcmp(fid_pt_names{fid_pt_no}, 'tangent')
-        %Tangent amp is onset amp
-        amp = pts.f1.amp(good_loc);
-    elseif sum(strcmp(fid_pt_names{fid_pt_no}, {'W','ms2'}))
-        amp = derivs.first(curr_temp_el);
-    elseif   sum(strcmp(fid_pt_names{fid_pt_no}, {'a','b','c','d','e','f'}))
-        amp = derivs.second(curr_temp_el);
-    else
-        error(['Unknown type: ', fid_pt_names{fid_pt_no}])
-    end
-    eval(['pts.' fid_pt_names{fid_pt_no} '.amp(good_loc) = amp;'])
-    
-    
-    
-    % - timing of fiducial point
-    %     t = (curr_temp_el-1)/PPG.fs;
-    try
-        t = PPG.t(curr_temp_el);
-    catch
-        %This is for tangent that has a fractal indice value
-        t = interp1(1:length(PPG.t),PPG.t,curr_temp_el);
-    end
-    eval(['pts.' fid_pt_names{fid_pt_no} '.t(good_loc) = t;'])
-    
-    %
-    clear amp_norm sig_ind amp t
-end
-
-
-clear starting_indice curr_temp_el
+%% Define varargout
+varargout{1} = pts;
+if config.do_normalise; varargout{end+1} = norm_pts; end
+varargout{end+1} = derivs;
 %% Now plot
 if plot_flag
-    %% Plot 1 - time series with selected fiducial points
-    figure
     % Colours for plotting
     colours = func.aux_functions.define_colours;
     
+    markers_store = 'o*^do*^do*^d';
+    do_mins = PPG.t(end) > 10*60;
+    if do_mins % Plot mins or seconds
+        PPG.t =  PPG.t/60;
+    end
     
-    good_beats = include_pulse;
+    %% Plot time series with selected fiducial points
+    figure('Position', [688   109   794   860])
     
-    time = PPG.t;
-    num_subplots = 4;
+    good_beats = PPG.sqi_beat > 0;
+    
+    num_rows = 4; num_cols = 1; p_idx = 1;
     
     marker_size = 40;
     face_alpha = 0.3; edge_alpha = 1; edge_color ='k';
     
     
     %PPG plot
-    markers_store = 'o*^do*^do*^d';
+    ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
+    plot(PPG.t, PPG.ts, 'Color', colours.black, 'LineWidth', 1.2)
+    %     end
     m_idx = 1;
-    
-    ax(1) = subplot(num_subplots,1,1);
-    plot(PPG.t, PPG.ts, 'Color', colours.blue, 'LineWidth', 1.2)
-    hold on
-    %     if flags.do_f1
-    %         scatter(pts.f1.t(good_beats), pts.f1.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color)
-    %         m_idx = m_idx+1;
-    %     end
-    %     if flags.do_tangent
-    %         scatter(pts.tangent.t(good_beats), pts.tangent.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color)
-    %         m_idx = m_idx+1;
-    %     end
-    %     if flags.do_halfpoint
-    %         scatter(pts.halfpoint.t(good_beats), pts.halfpoint.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color)
-    %         m_idx = m_idx+1;
-    %     end
     if flags.do_s
         scatter(pts.s.t(good_beats), pts.s.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, ...
             'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color, 'Marker', markers_store(m_idx))
@@ -573,29 +581,24 @@ if plot_flag
             'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color, 'Marker', markers_store(m_idx))
         m_idx = m_idx+1;
     end
-    %    xticks([])
     ylabel('PPG')
     %     legend('PPG','Onset', 'Tangent', 'Halfpoint', 'Peak','Dicrotic notch', 'Diastolic peak', 'Orientation', 'horizontal')
     legend('PPG','Peak','Dicrotic notch', 'Diastolic peak', 'Orientation', 'horizontal')
     
-    grid on
     
     
     %VPG plot
-    ax(2) = subplot(num_subplots,1,2);
-    plot(time, derivs.first, 'Color', colours.blue, 'LineWidth', 1.2)
-    hold on
+    ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
+    plot(PPG.t, derivs.first, 'Color', colours.black, 'LineWidth', 1.2)
     scatter(pts.W.t(good_beats), pts.W.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color)
     %    xticks([])
     ylabel('VPG')
     legend('VPG', 'Max slope', 'Orientation', 'horizontal')
-    grid on
     
     %APG plot
     
-    ax(3) = subplot(num_subplots,1,3);
-    plot(time, derivs.second, 'Color', colours.blue, 'LineWidth', 1.2)
-    hold on
+    ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
+    plot(PPG.t, derivs.second, 'Color', colours.black, 'LineWidth', 1.2)
     if flags.do_a; scatter(pts.a.t(good_beats), pts.a.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color); end
     if flags.do_b; scatter(pts.b.t(good_beats), pts.b.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color); end
     if flags.do_c; scatter(pts.c.t(good_beats), pts.c.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color); end
@@ -605,66 +608,24 @@ if plot_flag
     %    xticks([])
     ylabel('APG')
     legend('APG', 'a', 'b', 'c', 'd', 'e', 'f', 'Orientation', 'horizontal')
-    grid on
     
     %3rd deriv plot
     
-    ax(4) = subplot(num_subplots,1,4);
-    plot(time, derivs.third, 'Color', colours.blue, 'LineWidth', 1.2)
-    hold on
+    ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
+    plot(PPG.t, derivs.third, 'Color', colours.black, 'LineWidth', 1.2)
     if flags.do_p1pk; scatter(pts.p1pk.t(good_beats), pts.p1pk.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color); end
     if flags.do_p2pk; scatter(pts.p2pk.t(good_beats), pts.p2pk.amp(good_beats), marker_size, 'filled', 'MarkerFaceAlpha', face_alpha, 'MarkerEdgeAlpha', edge_alpha, 'MarkerEdgeColor', edge_color); end
     ylabel('JPG')
     legend('JPG', 'p1pk', 'p2pk', 'Orientation', 'horizontal')
-    grid on
     
-    xlabel('Time (s)')
-    
-    linkaxes(ax, 'x')
-    
-    %     bold_figure;
-    
-    %% Plot 2
-    %     pulse_no = 25;
-    %     func.pulsew.plot_ppg_indices(PPG, pulse_no,   1)
-    %% Plot 3 - Histogram of all points
-    
-    pt_names_plt = fieldnames(pts);
-        
-    %First work out number of rows and columns
-    num_rows = ceil(sqrt(numel(pt_names_plt)));
-    num_columns = ceil(sqrt(numel(pt_names_plt)));
-    figure
-    
-    for pt_name_no = 1 : numel(pt_names_plt)
-        subplot(num_rows, num_columns, pt_name_no)
-        %         eval(['curr_temp_el = pts.',fid_pt_names{pt_name_no}, '.ind;'])
-        if ~isfield(pts.(pt_names_plt{pt_name_no}), 'ind')
-            continue
-        end
-        curr_temp_el = pts.(pt_names_plt{pt_name_no}).ind;
-        %Remove nans
-        curr_temp_el(isnan(curr_temp_el)) = [];
-        % - amplitude of fiducial point
-        if sum(strcmp(pt_names_plt{pt_name_no}, {'s','dia','dic','p1pk','p1in','p2pk','p2in','f1','f2', 'halfpoint', 'tangent'}))
-            eval(['amp = pts.',pt_names_plt{pt_name_no}, '.amp;'])
-            
-        elseif sum(strcmp(pt_names_plt{pt_name_no}, {'a','b','c','d','e','f'}))
-            amp = derivs.second(curr_temp_el);
-            
-        elseif sum(strcmp(pt_names_plt{pt_name_no}, {'W'}))
-            amp = derivs.first(curr_temp_el);
-        else
-            continue
-        end
-        
-        histogram(amp, 'FaceColor', colours.blue)
-        title(pt_names_plt{pt_name_no})
+    if do_mins
+        xlabel('Time (mins)');
+    else
+        xlabel('Time (secs)');
     end
     
-    %     func.plot.tightfig();
-    set(findobj(gcf,'type','axes'),'FontName','Arial','FontSize',10,'FontWeight','Bold', 'LineWidth', 0.6);
-    
+    linkaxes(ax, 'x')
+    func.plot.tightfig();    
 end
 
 

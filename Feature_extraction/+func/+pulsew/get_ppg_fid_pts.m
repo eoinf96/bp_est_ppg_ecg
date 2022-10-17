@@ -299,7 +299,6 @@ for pulse_no = 1 : num_beats
                 if length(mat_most_recent_t_systole) < dic_detection_vals.num_beats_average
                     t_w_max = 0.45 - 0.1/dic_detection_vals.T(pulse_no);
                 else
-                    % Need to sort this out -- what if t_sys is wrong?
                     t_w_max = mean(mat_most_recent_t_systole(end-(dic_detection_vals.num_beats_average-1):end));
                 end
                 Tau_w_max = dic_detection_vals.Tau_func(t_w_max, t_peak, dic_detection_vals.T(pulse_no));
@@ -320,15 +319,13 @@ for pulse_no = 1 : num_beats
                 loc_notch = func.waveform.find_pks_trs(weighted_deriv, 'pks');
                 peak_val = weighted_deriv(loc_notch);
                 if ~isempty(loc_notch)
-                    [~, i_loc_notch] = max(peak_val); %%% he maximum peak??
+                    [~, i_loc_notch] = max(peak_val); 
                     store.dic(pulse_no) = loc_notch(i_loc_notch);
                     
                     %Update most recent t_sys
                     t_w_max = curr.t(store.dic(pulse_no));
                     dic_detection_vals.most_recent_t_systole{pulse_no} = t_w_max;
                 end
-                %Can also move the notch to the point of VPG closest to 0. Not
-                %done here but check Balmer_notch_detection for implementation.
             end
         end
         %%%%%%%%END%%%%%%%%

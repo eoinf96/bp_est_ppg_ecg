@@ -1,48 +1,42 @@
-% Functions to fit the sum of four Gaussians to each PPG beat
-% --
-%  Released under the GNU General Public License
-%  Copyright (C) 2021  Eoin Finnegan
-%  eoin.finnegan@eng.ox.ac.uk
-% 
-%  This program is free software: you can redistribute it and/or modify
-%  it under the terms of the GNU General Public License as published by
-%  the Free Software Foundation, either version 3 of the License, or
-%  (at your option) any later version.
-% 
-%  This program is distributed in the hope that it will be useful,
-%  but WITHOUT ANY WARRANTY; without even the implied warranty of
-%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-%  GNU General Public License for more details.
-% 
-%  You should have received a copy of the GNU General Public License
-%  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-%%
-function [pts] = gaussian_model(ts,...
-                                t,...
-                                onsets,...
-                                sqi_beat,...
-                                params,...
-                                do_plot)
+function [pts, rmse_error] = gaussian_model(ts,t,onsets,sqi_beat,config,do_plot)
 % This function loops through each PPG beat and fits the sum of four
 % gaussian model to each beat
 % 
-% Inputs:
+% INPUT:
 %       ts -- PPG time series vecor
 %       t -- time vector
 %       onsets -- indices of onsets of each PPG pulse
 %       sqi_beat -- sqi of each beat
-%       do_normalise -- flag indicating whether to normalise the width of
-%                       each beat to be 1
+%       config -- configs struct, see below for details
 %       do_plot -- flag for plotting 
-% Outputs:
-%       pts -- struct containing amp, sigma and mu of each gaussian for
-%       each pulse
-if nargin < 5 || isempty(params)
-    params = struct();
+% OUTPUT:
+%       pts -- struct containing amp, sigma and mu of each gaussian for each pulse
+%       rmse_error -- Fitting error for each beat
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
+% 
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+% 
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+%
+%
+% Relevant literature:
+% - Couceiro, R., Carvalho, P., Paiva, R.P., Henriques, J., Antunes, M., Quintal, I. and Mühlsteff, J., 2012, August. Multi-Gaussian fitting for the assessment of left ventricular ejection time from the Photoplethysmogram. In 2012 Annual International Conference of the IEEE Engineering in Medicine and Biology Society (pp. 3951-3954). IEEE.
+%
+
+if nargin < 5 || isempty(config)
+    config = struct();
 end
-default_params.do_normalise = false; 
-default_params.continue_points = true; %Whether we attempt to force consistency by using previous starting points
-params = func.aux_functions.update_with_default_opts(params, default_params);
+default_config.do_normalise = false; 
+default_config.continue_points = true; %Whether we attempt to force consistency by using previous starting points as current starting points
+default_config.error_threshold = 0.03; % Maximum allowable fitting error 
+config = func.aux_functions.update_with_default_opts(config, default_config);
 
 if nargin < 6
    do_plot = false; 
@@ -53,17 +47,18 @@ num_beats = length(onsets)-1;
 names = {'g1', 'g2', 'g3', 'g4'};
 
 for idx = 1:length(names)
-    eval(['pts.',names{idx},'.amp = nan(num_beats,1);'])
-    eval(['pts.',names{idx},'.mu = nan(num_beats,1);'])
-    eval(['pts.',names{idx},'.sigma = nan(num_beats,1);'])
+    pts.(names{idx}).amp = nan(num_beats,1);
+    pts.(names{idx}).mu = nan(num_beats,1);
+    pts.(names{idx}).sigma = nan(num_beats,1);
 end
 
+% Define single Gaussian function
 global gaussian
 gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
 
 
 %initial parameters to start optimisation from
-if params.do_normalise
+if config.do_normalise
     sigma_guess = 0.01;
 else
     sigma_guess = median(diff(t(onsets)))/100;
@@ -75,16 +70,16 @@ standard_guess = [1/1., 1/5, sigma_guess, ...
         1/6, 4*1/5, sigma_guess];
 
        
-%Store containing RMSE and normalised RMSE values of each beat
+%Store containing RMSE values of each beat
 rmse_error = nan(num_beats,1);
 %% Run loop
 for pulse_no = 1 : num_beats
 %     tic
-    if sqi_beat(pulse_no) < 0.8
+    if sqi_beat(pulse_no) == 0
         continue
     end
     
-    %% Get pulse
+    %% Get current pulse
     
     curr = [];
     %get current pulse
@@ -100,15 +95,11 @@ for pulse_no = 1 : num_beats
     %Normalise
     curr.ts_norm = curr.ts - min(curr.ts);
     curr.ts_norm = curr.ts_norm /max(curr.ts_norm);
-    if params.do_normalise
+    if config.do_normalise
         %Normalise time
         curr.t = curr.t - min(curr.t);
         curr.t = curr.t /max(curr.t);
-    end
-    
-    
-    %Initial guess at params
-    if ~params.do_normalise
+    else
         t_range = curr.t(end);
         standard_guess = [1/1.1, 0.8*t_range/5, sigma_guess, ...
             1/3, 2*t_range/5, sigma_guess,...
@@ -120,9 +111,8 @@ for pulse_no = 1 : num_beats
     if ~exist('p_opt', 'var')
         p_opt = standard_guess;
     end
-    if params.continue_points
+    if config.continue_points
         use_standard = 0;
-        
         try
             p_opt_prev = local_fit_model(p_opt,curr.t, curr.ts_norm);
         catch ME
@@ -165,6 +155,12 @@ for pulse_no = 1 : num_beats
     
     
     %% Assign new points
+    for idx = 1:length(names)
+        pts.(names{idx}).amp(pulse_no)      = p_opt(3*(idx-1)+1);
+        pts.(names{idx}).mu(pulse_no)       = p_opt(3*(idx-1)+2);
+        pts.(names{idx}).sigma(pulse_no)    = p_opt(3*(idx-1)+3);
+    end
+
     
     for idx = 1:length(names)
         eval(['pts.',names{idx},'.amp(pulse_no) = p_opt(',num2str(3*(idx-1)+1),');'])
@@ -191,20 +187,15 @@ for pulse_no = 1 : num_beats
     close
 %     toc
 end
-
-error_threshold = 0.03; % have slightly increased the error threshold to not be so strict
-set_rmse_gauss_func = @(x) set_rmse_gauss(x, rmse_error, error_threshold);
+%% Error handling
+% Any Gaussian fit with an error greater than the threshold is set to nan;
+set_rmse_gauss_func = @(x) set_rmse_gauss(x, rmse_error, config.error_threshold);
 pts = structfun(set_rmse_gauss_func, pts, 'UniformOutput', false);
-
-pts.gauss_error = rmse_error;
-
-
-
 end
 
 %% Local functions
 function p_opt = local_fit_model(p0,t, ts)
-% This function runs the model fitting
+% This function runs the Gaussian model fitting using initial parameters p0
 func_in_line = @(p, x) get_overall(p, x);
 lb = zeros(1,12);
 ub = repmat([1, 2, inf], 1,4);
@@ -215,8 +206,7 @@ end
 
 
 function out = get_overall( b,t)
-%This function sets up the objective function for the optimoptions to
-%optimise
+%This function sets up the objective function for the optimoptions to optimise
 global gaussian 
 %Check that they are in the correct order
 mu_1 = b(2);
@@ -238,8 +228,6 @@ est_fit = get_overall(b,t);
 RMSE = sqrt(mean((est_fit - ts).^2));
 % NRMSE = RMSE./range(ts);
 end
-
-
 
 function out = set_rmse_gauss(in, rmse, error_threshold)
    out= in;

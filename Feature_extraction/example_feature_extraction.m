@@ -31,17 +31,17 @@ colours = func.aux_functions.define_colours();
 lw = 1.6;
 figure('position', [84         508        1484         439])
 num_rows = 4; num_cols = 1; p_idx = 1;
-ax(p_idx) = subplot(num_rows, num_cols, p_idx);p_idx = p_idx+1;
+ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
 plot(PPG.t/60, PPG.ts, 'Color', colours.black, 'LineWidth', lw);
 xlabel('Time (mins)'); ylabel('PPG');
-ax(p_idx) = subplot(num_rows, num_cols, p_idx);p_idx = p_idx+1;
+ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
 plot(PPG.t(PPG.peaks)/60, PPG.sqi_beat, 'Color', colours.black, 'LineWidth', lw);
 ylim([0, 1])
 xlabel('Time (mins)'); ylabel('SQI_{PPG}');
-ax(p_idx) = subplot(num_rows, num_cols, p_idx);p_idx = p_idx+1;
+ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
 plot(ECG.t/60, ECG.ts, 'Color', colours.black, 'LineWidth', lw);
 xlabel('Time (mins)'); ylabel('ECG');
-ax(p_idx) = subplot(num_rows, num_cols, p_idx);p_idx = p_idx+1;
+ax(p_idx) = subplot(num_rows, num_cols, p_idx);hold on; p_idx = p_idx+1;
 plot(ECG.t(ECG.peaks)/60, ECG.sqi_beat, 'Color', colours.black, 'LineWidth', lw);
 xlabel('Time (mins)'); ylabel('SQI_{ECG}');
 ylim([0, 1])
@@ -52,11 +52,10 @@ end
 %% Get features from PPG
 
 %Load configs
-% configs = return_configs;
-% [PPG.fid_pts, PPG.derivs]      = func.pulsew.get_ppg_fid_pts(PPG, configs.PPG.fid_point); % Look into the plot feature
-% PPG.pw_inds      = func.pulsew.get_ppg_indices(PPG);
-% PPG.norm_fid_pts = func.pulsew.get_norm_ppg_fid_pts(PPG, configs.PPG.fid_point);
-% PPG.norm_pw_inds = func.pulsew.get_norm_ppg_indices(PPG);
+configs = return_configs;
+[PPG.fid_pts, PPG.norm_fid_pts, PPG.derivs]      = func.pulsew.get_ppg_fid_pts(PPG, configs.PPG.fid_point); 
+PPG.pw_inds      = func.pulsew.get_ppg_indices(PPG, 0);
+PPG.norm_pw_inds = func.pulsew.get_ppg_indices(PPG);
 
 %% Get PPG feature vector
 t_window_start = 0:params.window_size:(PPG.t(end)-30);
@@ -74,5 +73,3 @@ PAT = func.pat.get_pat_beat(ECG, PPG, 'tangent', [], 1);
 PAT_feature_table = func.pat.make_pat_feature_vector(PAT, t_window_start, t_window_end);
 %% Get total feature vector
 feature_vector = [PPG_feature_table, ECG_feature_table, PAT_feature_table];
-
-

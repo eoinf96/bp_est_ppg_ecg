@@ -34,7 +34,7 @@ function [pw_inds] = get_ppg_indices(PPG,do_normalise, config,  plot_flag)
 % - Rubins, U., Grabovskis, A., Grube, J. & Kukulis, I. Photoplethysmography analysis of artery properties in patients with cardiovascular diseases. In IFMBE Proceedings, vol. 20 IFMBE, 319–322, DOI: 10.1007/978-3-540-69367-3-85 (Springer, 2008)
 narginchk(1, inf);
 if nargin < 2 || isempty(do_normalise)
-    do_normalise = 1;
+    do_normalise = 1; % Return PPG indicies of a normalised PPG beat.
 end
 if nargin < 3 || isempty(config)
     config = struct();
@@ -44,22 +44,26 @@ if nargin < 4
 end
 default_config.do_normalise = do_normalise; % Whether to also return the normalised pulse wave inds
 default_config.ht = nan; % The height of the individual
-default_config.do_filter = 1;
-default_config.ht = nan;
+default_config.do_filter = 1; % Flags whether to filter the PPG signal
+default_config.ht = nan; % Height of the individual
 default_config.verbose_flag = 0;
 config = func.aux_functions.update_with_default_opts(config, default_config);
 %% Get fid_pts
 if ~isfield(PPG, 'fid_pts')
-    if ~config.do_normalise == 1
+    if config.do_normalise ~= 1
         [fid_pts, PPG.derivs] = func.pulsew.get_ppg_fid_pts(PPG);
     else
         [~, fid_pts, ~] = func.pulsew.get_ppg_fid_pts(PPG);
     end
 else
-    if ~config.do_normalise == 1
+    if config.do_normalise ~= 1
         fid_pts = PPG.fid_pts;
     else
         fid_pts = PPG.norm_fid_pts;
+    end
+    
+    if ~isfield(PPG, 'derivs')
+        PPG.derivs = func.pulsew.get_derivs(PPG.ts, PPG.fs);
     end
 end
 
@@ -349,6 +353,8 @@ end
  % - Ratio of diastolic to systolic area (called Inflection point area)
 pw_inds.IPA = pw_inds.A2 ./ pw_inds.A1;
 
+% - Inflection and Harmonic area ratio (IHAR) (from Wang et al) - "Noninvasive cardiac output estimation using a novel PPG index"
+pw_inds.IHAR = pw_inds.NHA./pw_inds.IPA;
 
 %% Remaining Gauss features
 if isfield(fid_pts, 'g1')
@@ -494,8 +500,8 @@ function pw_inds = local_get_pulse_inds(fid_pts, curr, pw_inds, beat_no)
 
         pw_inds.NHA(beat_no) = 1-(sum(pw(loc(2:end)))/sum(pw(loc(1:end))));
 
-        pw_inds.skew(beat_no) = skewness(curr.ts);
-        pw_inds.kurt(beat_no) = kurtosis(curr.ts);
+        pw_inds.skewness(beat_no) = skewness(curr.ts);
+        pw_inds.kurtosis(beat_no) = kurtosis(curr.ts);
     end
      
     %% First derivative

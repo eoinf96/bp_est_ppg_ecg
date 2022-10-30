@@ -1,3 +1,5 @@
 .DS_Store
 venv/
-/Feature_extraction/to_refresh_path_do_not_github
+Feature_extraction/to_refresh_path_do_not_github.m
+Feature_extraction/notes.txt
+BP_est/notes.txt

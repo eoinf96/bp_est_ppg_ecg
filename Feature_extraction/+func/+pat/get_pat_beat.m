@@ -1,24 +1,29 @@
-function PAT = get_pat_beat(...
-                            ECG, ...
-                            PPG, ...
-                            distal_point,...
-                            configs, ...
-                            plot_summary_flag)
-% get_PAT_beat loads ECG and PPG signals and computs beat-by-beat Pulse Arrival Time
-% The PAT beats are centred on the point of ECG R-wave
+function PAT = get_pat_beat(ECG,PPG, distal_point, configs, plot_flag)
+%  This function computes beat by beat PAT estimates as the time delay
+%  between fiducial points on the ECG and PPG signals. 
 %
-%----------------------------------
+% INPUT: ECG: ECG time series
+%        PPG: PPG time series
+%        distal_point: name of PPG distal point to use - default is 'tangent'
+%        configs: configs struct, see below for details
+%        plot_flag
 %
-% Inputs:
-% ECG -- ECG signal
-% PPG -- PPG signal
-% distal_point -- this defines the fiducial distal point
-% configs -- set of configs to define how PAT is computed
-% plot_summary_flag -- fancy a plot?
-%----------------------------------
+% OUTPUT: PAT: Beat by beat PAT time series. 
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
 %
-%Outputs 
-% PAT -- beat by beat PAT signal
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+%
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+%
+% Relevant literature:
+% ﻿Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Young, D., Tarassenko, L., & Villarroel, M. (2021). Pulse arrival time as a surrogate of blood pressure. Scientific Reports, 11(1), 1–21.
 %% Proces inputs
 narginchk(2, inf);
 if nargin < 3 || isempty(distal_point)
@@ -27,8 +32,8 @@ end
 if nargin < 4 || isempty(configs)
     configs = struct();
 end
-if nargin < 5 || isempty(plot_summary_flag)
-    plot_summary_flag = false;
+if nargin < 5 || isempty(plot_flag)
+    plot_flag = false;
 end
 % Set the default configs
 default_configs.PAT_range_flag =0; %This indicates whether to compute PAT between 2 ecg pulses (0) or witihin a defined range
@@ -95,7 +100,7 @@ if isfield(ECG, 'start_datetime') || isfield(PPG, 'start_datetime')
 end
 % PAT= func.aux_functions.update_good(PAT);
 %% plot beat by beat PAT values
-if plot_summary_flag
+if plot_flag
    
     do_mins = ECG.t(end) > 10*60;
     if do_mins % Plot mins or seconds
@@ -115,7 +120,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index:index+1);
     ax_index= ax_index +1;
     index = index+2;
-    plot(ECG.t/factor, ECG.ts, 'LineWidth',1.2, 'Color', colours.blue)
+    plot(ECG.t/factor, ECG.ts, 'LineWidth',1.2, 'Color', colours.black)
     hold on
     h1 = scatter(ECG.t(ECG.peaks)/factor, ECG.ts(ECG.peaks), '*','MarkerEdgeColor', colours.red);
     ylabel('ECG (mV)');
@@ -126,7 +131,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index);
     ax_index= ax_index +1;
     index = index+1;
-    plot(ECG.t/factor, ECG.sqi, 'LineWidth',1.2,'color',colours.blue)
+    plot(ECG.t/factor, ECG.sqi, 'LineWidth',1.2,'color',colours.black)
     hold on
     line([ECG.t(1)/factor, ECG.t(end)/factor], [configs.sqi_threshold, configs.sqi_threshold],'LineStyle','--', 'color', colours.yellow)
     ylabel('ECG sqi');
@@ -140,7 +145,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index:index+1);
     ax_index= ax_index +1;
     index = index+2;
-    plot(PPG.t/factor, PPG.ts, 'LineWidth',1.2, 'Color', colours.blue)
+    plot(PPG.t/factor, PPG.ts, 'LineWidth',1.2, 'Color', colours.black)
     hold on
     h1 = scatter(PPG.marker.t/factor, PPG.marker.amp, '*','MarkerEdgeColor', colours.red);
     ylabel('PPG (a.d.u)');
@@ -153,7 +158,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index);
     ax_index= ax_index +1;
     index = index+1;
-    plot(PPG.t/factor, PPG.sqi, 'LineWidth',1.2,'Color',colours.blue)
+    plot(PPG.t/factor, PPG.sqi, 'LineWidth',1.2,'Color',colours.black)
     hold on
     line([PPG.t(1)/factor, PPG.t(end)/factor], [configs.sqi_threshold, configs.sqi_threshold],'LineStyle','--', 'color', colours.yellow)
     ylabel('PPG sqi');
@@ -167,7 +172,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index:index+1);
     ax_index= ax_index +1;
     index = index+2;
-    plot(PAT.t_beat/factor, PAT.ts_beat, '-*', 'LineWidth',0.8, 'Color', colours.blue)
+    plot(PAT.t_beat/factor, PAT.ts_beat, '-*', 'LineWidth',0.8, 'Color', colours.black)
     if configs.PAT_range_flag
         hold on
         line([PAT.t_beat(1)/factor,PAT.t_beat(end)/factor], [configs.PAT_min_value, configs.PAT_min_value], 'Color', colours.yellow, 'LineStyle', '--')
@@ -183,7 +188,7 @@ if plot_summary_flag
     ax(ax_index) = subplot(num_rows,1,index);
     ax_index= ax_index +1;
     index = index+1;
-    plot(PAT.t_beat/factor, PAT.sqi_beat, 'LineWidth',1.2, 'LineWidth',1.2,'Color',colours.blue)
+    plot(PAT.t_beat/factor, PAT.sqi_beat, 'LineWidth',1.2, 'LineWidth',1.2,'Color',colours.black)
     hold on
     line([PAT.t_beat(1)/factor, PAT.t_beat(end)/factor], [configs.sqi_threshold, configs.sqi_threshold],'LineStyle','--', 'color', colours.yellow)
     ylabel('PAT sqi');
@@ -195,7 +200,7 @@ if plot_summary_flag
     
     ax(ax_index) = subplot(num_rows,1,index:index+1);
     if ~isfield(PAT, 'good_beat'); PAT.good_beat = PAT.ts_beat; PAT.good_beat(PAT.sqi_beat == 0 ) = nan;     end
-    plot(PAT.t_beat/factor, PAT.good_beat, '-*', 'LineWidth',0.8, 'Color', colours.blue)
+    plot(PAT.t_beat/factor, PAT.good_beat, '-*', 'LineWidth',0.8, 'Color', colours.black)
     ylabel('PAT good');
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

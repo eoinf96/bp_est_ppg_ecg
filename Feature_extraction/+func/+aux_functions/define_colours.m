@@ -1,4 +1,19 @@
 function [colours] = define_colours
+% This function returns RGB colours typically used for plotting
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
+% 
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+% 
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+
+
 % Define colours for plotting
     colours.blue        = [0.3010, 0.7450, 0.9330];
     colours.red         = [0.6350, 0.0780, 0.1840];

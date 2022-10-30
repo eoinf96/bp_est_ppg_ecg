@@ -1,12 +1,32 @@
-function PAT = pat_beat_ecg(PPG,              ...
-                            ECG,              ...
-                            plot_flag, ...
-                            fig_h,            ...
-                            configs)
-% PAT_beat_range computed beat by beat pulse arrival time (PAT) from an
+function PAT = pat_beat_ecg(PPG, ECG, plot_flag, fig_h, configs)
+% pat_beat_ecg computed beat by beat pulse arrival time (PAT) from an
 % input ECG and PPG waveform. PAT is computed as time from ECG to the first 
 % PPG fiducial point before the next ECG. This function is typically called from
-% get_PAT_beat which initialises the PP.marker field
+% get_PAT_beat which initialises the PPG.marker field
+%
+%
+% INPUT: ECG: ECG time series
+%        PPG: PPG time series
+%        plot_flag - This saves a video of the computation of each PAT beat value. Useful for visualisation of
+%        fig_h: Figure handle to plot detail on
+%        configs: configs struct, see below for details
+%
+% OUTPUT: PAT: Beat by beat PAT time series. 
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
+%
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+%
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+%
+% Relevant literature:
+% ﻿Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Young, D., Tarassenko, L., & Villarroel, M. (2021). Pulse arrival time as a surrogate of blood pressure. Scientific Reports, 11(1), 1–21.
 narginchk(2, inf)
 if nargin < 3
     plot_flag = 0;

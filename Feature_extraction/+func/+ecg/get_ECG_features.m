@@ -1,56 +1,68 @@
-%make_ECG_feature_vector - This function generates the ECG feature vector
-% --
-%  Released under the GNU General Public License
-%  Copyright (C) 2021  Eoin Finnegan
-%  eoin.finnegan@eng.ox.ac.uk
+function [ECG_feats, feature_names] = get_ECG_features(ts, configs)
+% This function returns the complexity features computes on an ECG segment ts
+% Many methods used in this function have been taken from MathWorks
+% FileExchage -- the authors of these methods have been highlighted
 %
-%  This program is free software: you can redistribute it and/or modify
-%  it under the terms of the GNU General Public License as published by
-%  the Free Software Foundation, either version 3 of the License, or
-%  (at your option) any later version.
+% INPUT: ts: ECG segment time series
+%       configs: configs struct, see below for details
 %
-%  This program is distributed in the hope that it will be useful,
-%  but WITHOUT ANY WARRANTY; without even the implied warranty of
-%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-%  GNU General Public License for more details.
+% OUTPUT: ECG_feats: Vector of feature values
+%         feature_names: String cell of feature names
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
 %
-%  You should have received a copy of the GNU General Public License
-%  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-function [feature_vector, feature_names] = get_ECG_features(ts, opts)
-% Inputs : ECG time series
-%           peaks -- only needed if doing HRV
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+%
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+%
+%
+% Relevant literature:
+% - Monika Simjanoska et al. “Non-invasive blood pressure estimation from ECG using machine learning techniques”. In: Sensors (Switzerland) 18.4 (2018), p. 1160.
+% - Sen Yang et al. “Blood pressure estimation with complexity features from electrocardiogram and photoplethysmogram signals”. In: Optical and Quantum Electronics 52.3 (2020), p. 135.
+% - 
+
 narginchk(1, inf)
 if nargin < 2
-    opts = struct();
+    configs = struct();
 end
-default_opts.MSE_scale_list = 2:2:8;
-default_opts.do_HRV_feats = 0;
-opts = func.aux_functions.update_with_default_opts(opts, default_opts);
-%%
-
+default_configs.MSE_scale_list = 2:2:8;
+configs = func.aux_functions.update_with_default_opts(configs, default_configs);
+%% Get complexity features
+% Hjorth params
 [mobility, complexity ] = HjorthParameters(ts);
+
+% Fractal dimension
 fractal = Higuchi_FD(ts', 17);
 
+% Shannon entropy
 p = histcounts(ts, 'Normalization', 'Probability');
 shannon_entropy = -sum(p(p>0).*log2(p(p>0)) );
 
 
-% Complexity features
+% Entropy features
 m = 2;
 r_factor = 0.2;%* std(ts);
-approxEnt = approx_entropy(ts, m, r_factor );
+approxEnt = approxEntropy(ts, m, r_factor );
 sampEnt = sampleEntropy(ts, m, r_factor );
 
-mseEnt = nan(length(opts.MSE_scale_list), 1);
-for scale_idx = 1:length(opts.MSE_scale_list)
-    mseEnt(scale_idx) = multiscaleSampleEntropy( ts, m, r_factor, opts.MSE_scale_list(scale_idx));
+mseEnt = nan(length(configs.MSE_scale_list), 1);
+for scale_idx = 1:length(configs.MSE_scale_list)
+    mseEnt(scale_idx) = multiscaleSampleEntropy( ts, m, r_factor, configs.MSE_scale_list(scale_idx));
 end
 
-feature_vector = [mobility; complexity; fractal; shannon_entropy; approxEnt; sampEnt; mseEnt(:)];
-feature_names = vertcat({'Hjorth_mobility'; 'Hjorth_complexity'; 'Fractal_dimension'; 'SE'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(opts.MSE_scale_list)))');
+%% Combine features
+ECG_feats = [mobility; complexity; fractal; shannon_entropy; approxEnt; sampEnt; mseEnt(:)];
+feature_names = vertcat({'Hjorth_mobility'; 'Hjorth_complexity'; 'Fractal_dimension'; 'SE'; 'approxEnt'; 'sampEnt' }, strcat('MSE_scale_', cellstr(string(configs.MSE_scale_list)))');
 
 end
 
+%% Local functions -- all from MathWorks
 
 
 function value = sampleEntropy(signal, m, r, dist_type)
@@ -110,7 +122,7 @@ if isinf(value)
     value = -log(2/((N-m-1)*(N-m)));
 end
 end
-function apen = approx_entropy(data,  dim, r, tau )
+function apen = approxEntropy(data,  dim, r, tau )
 %ApEn
 %   dim : embedded dimension
 %   r : tolerance (typically 0.2 * std)

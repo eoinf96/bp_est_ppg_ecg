@@ -6,19 +6,19 @@ function [varargout ] = get_ppg_fid_pts(PPG,config, plot_flag)
 % INPUT: PPG: PPG signal
 %       configs: configs struct, see below for details
 %       plot_flag: flag whether to plot a summary
-% 
+%
 % OUTPUT: pts: struct defining the locations, timings and amplitudes of all fiducial points
 %         norm_pts: struct defining the locations, timings and amplitudes of all fiducial points using normalised PPG pulses -- only returned if config.do_normalise == 1
 %           derivs: struct of PPG derivatives
 % ---
 % Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
-% 
+%
 % Released under the GNU General Public License
 %
 % Copyright (C) 2022  Eoin Finnegan
 % University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
 % eoin.finnegan@eng.ox.ac.uk
-% 
+%
 % Referencing this work
 %
 % Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
@@ -42,10 +42,10 @@ end
 if nargin < 3
     plot_flag  = false;
 end
-default_config.fid_pt_names = allowed_fid_pt_names;
+default_config.fid_pt_names = allowed_fid_pt_names; % Cell of strings defining the fiducial points to be located
 default_config.gauss_continue_points = 0; % Used in Gaussian fitting
-default_config.do_e_for_dic = false; % If to use e as the location of dicrotic notch
-default_config.do_filter = 1;
+default_config.do_e_for_dic = true; % If to use e as the location of dicrotic notch - If set to false then Balmer definition is used
+default_config.do_filter = 1; % Flags whether to filter the PPG signal
 default_config.do_normalise = 1; % Whether to also return the normalised fiducial points
 config = func.aux_functions.update_with_default_opts(config, default_config);
 fid_pt_names = config.fid_pt_names;
@@ -53,8 +53,9 @@ fid_pt_names = config.fid_pt_names;
 config.do_gauss = any(strcmp(fid_pt_names, 'gauss'));
 %% Error checks
 if isempty(PPG.ts)
-    pts = [];
-    derivs = [];
+    varargout{1} = [];
+    if config.do_normalise; varargout{end+1} = []; end
+    varargout{end+1} = [];
     return
 end
 %Are there any unsupported fiducial points?
@@ -69,7 +70,7 @@ if any(strcmp(fid_pt_names, 'tangent'))
     fid_pt_names{end+1} = 'tangent';
 end
 %% Filter Signal
-if config.do_filter    
+if config.do_filter
     % Butterworth IIR bandpass filter
     [b,a] = butter(8,10/(PPG.fs/2), 'low');
     ts_filt = filtfilt(b,a,PPG.ts);
@@ -132,11 +133,11 @@ for pulse_no = 1 : num_beats
     curr.t = curr.t - t_start;
     curr.ts = ts_filt(curr_els);
     
-    % Correct for low frequency baseline drift in a single beat 
+    % Correct for low frequency baseline drift in a single beat
     correction_line = linspace(curr.ts(1), curr.ts(end), length(curr.ts));
     curr.ts = curr.ts - correction_line' + curr.ts(1);
     
-    curr.ts_orig = curr.ts;    
+    curr.ts_orig = curr.ts;
     
     if config.do_normalise
         curr.ts_norm = curr.ts - min(curr.ts);
@@ -150,7 +151,7 @@ for pulse_no = 1 : num_beats
     for d_idx = 1:length(deriv_names)
         curr.derivs.(deriv_names{d_idx}) = derivs.(deriv_names{d_idx})(curr_els);
     end
-    %% Identify fiducial points    
+    %% Identify fiducial points
     %%%%%%%%START%%%%%%%% find f1 and f2
     if flags.do_f1
         store.f1(pulse_no) = 1;
@@ -229,12 +230,12 @@ for pulse_no = 1 : num_beats
         end
         store.b(pulse_no) = temp_b;
     end
-       %%%%%%%%END%%%%%%%%
+    %%%%%%%%END%%%%%%%%
     
     %%%%%%%%START%%%%%%%%
     if flags.do_p1pk || flags.do_p1in
         % find p1 -- early systolic peak
-        temp_p1 = func.pulsew.identify_p1(curr, store.b(pulse_no), [0.1, 0.18].* PPG.fs );
+        temp_p1 = identify_p1(curr, store.b(pulse_no), [0.1, 0.18].* PPG.fs );
     else
         temp_p1 = [];
     end
@@ -243,8 +244,8 @@ for pulse_no = 1 : num_beats
     %%%%%%%%START%%%%%%%%
     if flags.do_e
         % find e
-        temp_e = func.pulsew.identify_e(curr, store.W(pulse_no), store.b(pulse_no));
-        %     store.e(pulse_no) = func.pulsew.identify_e(curr, store.W(pulse_no), store.b(pulse_no));
+        temp_e = identify_e(curr, store.W(pulse_no), store.b(pulse_no));
+        %     store.e(pulse_no) = identify_e(curr, store.W(pulse_no), store.b(pulse_no));
     else
         temp_e = [];
     end
@@ -275,8 +276,8 @@ for pulse_no = 1 : num_beats
         
         
         %%%%%%%%START%%%%%%%%
-        if flags.do_dic 
-           if config.do_e_for_dic
+        if flags.do_dic
+            if config.do_e_for_dic
                 if store.e(pulse_no) < store.s(pulse_no)
                     try
                         if store.dic(pulse_no-1) < store.f2(pulse_no)
@@ -319,7 +320,7 @@ for pulse_no = 1 : num_beats
                 loc_notch = func.waveform.find_pks_trs(weighted_deriv, 'pks');
                 peak_val = weighted_deriv(loc_notch);
                 if ~isempty(loc_notch)
-                    [~, i_loc_notch] = max(peak_val); 
+                    [~, i_loc_notch] = max(peak_val);
                     store.dic(pulse_no) = loc_notch(i_loc_notch);
                     
                     %Update most recent t_sys
@@ -356,8 +357,8 @@ for pulse_no = 1 : num_beats
         %%%%%%%%START%%%%%%%%
         if flags.do_c
             % find c
-            temp_c = func.pulsew.identify_c(curr, store.b(pulse_no), store.e(pulse_no));
-            %         store.c(pulse_no) = func.pulsew.identify_c(curr, store.b(pulse_no), store.e(pulse_no));
+            temp_c = identify_c(curr, store.b(pulse_no), store.e(pulse_no));
+            %         store.c(pulse_no) = identify_c(curr, store.b(pulse_no), store.e(pulse_no));
         else
             temp_c=[];
         end
@@ -390,7 +391,7 @@ for pulse_no = 1 : num_beats
             %%%%%%%%START%%%%%%%%
             if flags.do_p2pk || flags.do_p2in
                 % find p2 -- late systolic peak
-                temp_p2 = func.pulsew.identify_p2(curr, store.d(pulse_no), temp_p1, store.dic(pulse_no));
+                temp_p2 = identify_p2(curr, store.d(pulse_no), temp_p1, store.dic(pulse_no));
             end
             %%%%%%%%END%%%%%%%%
         else
@@ -622,8 +623,167 @@ if plot_flag
     end
     
     linkaxes(ax, 'x')
-    func.plot.tightfig();    
+    func.plot.tightfig();
 end
 
+
+end
+
+
+%% Local funcs
+% These are all functions to identify characterisitic fiducial points and
+% are adapted from P.Charlton: https://github.com/peterhcharlton/pulse-analyse
+function temp_p1 = identify_p1(curr, temp_b, buffer_p1)
+
+% find p1
+
+% find local minima in the first derivative
+fd_trs = func.waveform.find_pks_trs(curr.derivs.first, 'tr');
+
+
+% Find the first local minimum in the first derivative after 0.1 s
+current_buffer = buffer_p1(1);
+temp = find(fd_trs > current_buffer,1);
+% Find the second local minimum (or failing that, the first) in the first derivative after 'b'
+temp2 = find(fd_trs > temp_b, 2);
+if length(temp2) > 1
+    temp2 = temp2(2);
+end
+% Take whichever comes first:
+if temp2 < temp
+    temp = temp2;
+end
+temp_p1 = fd_trs(temp);
+
+% If this value for p1 is after the buffer of 0.18 s ...
+if temp_p1 > buffer_p1(2)
+    
+    % Then find the first local minimum in the fourth derivative after 0.1 s
+    fd_trs = func.waveform.find_pks_trs(curr.derivs.fourth, 'tr');
+    temp = find(fd_trs > current_buffer,1);
+    temp_p1 = fd_trs(temp); clear temp
+end
+
+% If this value for p1 is after the buffer of 0.18 s ...
+if temp_p1 > buffer_p1(2)
+    % Then find the last local minimum in the first derivative before 0.18 s
+    temp_p1 = fd_trs(find(fd_trs <= current_buffer,1,'last'));
+   
+    % If this doesn't find temp_p1, then extend the buffer
+    if isempty(temp_p1)
+        temp_p1 = fd_trs(find(fd_trs > current_buffer,1,'first'));
+    end
+end
+
+
+
+end
+
+
+function temp_p2 = identify_p2(curr, temp_d, temp_p1, temp_dic)
+
+% Find "p2" from the minimum value of the third derivative immediately before "d"
+td_trs = func.waveform.find_pks_trs(curr.derivs.third, 'tr');
+temp = find(td_trs < temp_d,1,'last'); clear d_pks
+temp_p2 = td_trs(temp);
+
+% unless c=d, in which case p2 will now be before p1, so take the minimum
+% value of the third derivative immediately after "d"
+if temp_p2 < temp_p1
+    temp_p2 = td_trs(find(td_trs<temp_dic,1,'last'));
+end
+
+% check to see if there is a maximum in the signal between the current
+% estimate of p2, and temp_dic. If so, take this instead
+pks = func.waveform.find_pks_trs(curr.ts, 'pk');
+try
+temp = find(pks> temp_p2 & pks < temp_dic);
+catch
+    temp_p2 = nan;
+    return
+end
+
+if length(temp) == 1
+    temp_p2 = pks(temp);
+elseif length(temp) == 2
+    temp_p2 = pks(temp(2));
+elseif length(temp) > 1
+%     fprintf('\nCheck this - identify p2')
+end
+
+end
+
+function temp_e = identify_e(curr, temp_ms, temp_b)
+    
+
+% Find local maxima in the second derivative
+pks = func.waveform.find_pks_trs(curr.derivs.second, 'pk');
+% Set an upper bound of 60 % of the PW duration
+upper_bound = 0.6*length(curr.ts);   % const from: https://en.wikipedia.org/wiki/QT_interval#/media/File:QT_interval_corrected_for_heart_rate.png
+%%%%%
+% QT interval represents time from ventricular contraction to relaxation.
+% Time to dicrotic notch can also be thought of in a similar manner and so
+% the two are related
+% 0.6 is essentially an upper estimate of the possible duration of systole
+% - In MOLLIE for example (and in the figure referenced above), t sys is
+% typically around 40% of the beat.
+%
+%%%%%
+
+% Set a lower bound of 'ms'
+lower_bound = temp_ms;
+% Identify the highest local maximum in the second derivative between these two bounds
+rel_pks = pks(pks >= lower_bound & pks <= upper_bound);
+[~, max_el] = max(curr.derivs.second(rel_pks));
+% If this is the first local maximum in this search region ...
+if max_el == 1
+    % work out whether this has detected the "c" wave
+    % - find out if there's an inflection point between "b" and this
+    temp_trs = func.waveform.find_pks_trs(curr.derivs.third, 'tr');
+    no_infl = sum(temp_trs > temp_b & temp_trs < rel_pks(max_el));
+    % - if not then take the next peak
+    if no_infl == 0
+        % if there is 1 peak in this search region ...
+        if length(rel_pks) < max_el+1   % Added in PulseAnalyse5
+            % then take the next peak (slightly above the upper bound
+            orig_el = find(pks >= lower_bound & pks <= upper_bound);
+            try
+                rel_pks = pks(orig_el:orig_el+1);
+            catch 
+                temp_e = [];
+                return 
+            end
+        end
+        rel_pk = rel_pks(max_el+1);
+    else
+        rel_pk = rel_pks(max_el);
+    end
+else
+    rel_pk = rel_pks(max_el);
+end
+temp_e = rel_pk;
+
+end
+
+
+function temp_c = identify_c(curr, temp_b, temp_e)
+
+% Identify C as the highest local maximum on the second derivative between "b" and "e"
+pks = func.waveform.find_pks_trs(curr.derivs.second, 'pk');
+temp = find(pks > temp_b & pks < temp_e);
+[~, rel_tr_el] = max(curr.derivs.second(pks(temp)));
+temp_c = pks(temp(rel_tr_el)); clear temp rel_tr_el pks
+
+% If there aren't any peaks that satisfy this criterion ...
+if isempty(temp_c)
+    % then identify C as the lowest local minimum on the third derivative
+    % after "b" and before "e"
+    trs = func.waveform.find_pks_trs(curr.derivs.third, 'tr');
+    temp = find(trs > temp_b & trs < temp_e);
+    [~, rel_tr_el] = min(curr.derivs.third(trs(temp)));
+    if ~isempty(rel_tr_el)
+        temp_c = trs(temp(rel_tr_el)); clear temp rel_tr_el trs
+    end
+end
 
 end

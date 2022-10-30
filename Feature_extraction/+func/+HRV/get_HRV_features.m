@@ -1,22 +1,30 @@
-% Function to get HRV features from a time series of RR intervals
-% --
-%  Released under the GNU General Public License
-%  Copyright (C) 2021  Eoin Finnegan
-%  eoin.finnegan@eng.ox.ac.uk
+function [HRV_stats] = get_HRV_features(RR_ts, RR_times, t_window_start, t_window_end, configs)
+%  This function returns a feature vector formed from ECG features typically
+%  used in BP estimation
 %
-%  This program is free software: you can redistribute it and/or modify
-%  it under the terms of the GNU General Public License as published by
-%  the Free Software Foundation, either version 3 of the License, or
-%  (at your option) any later version.
+% INPUT: RR_ts: RR intervals
+%        RR_ts RR intervals times
+%        t_window_start: vector of window start times within which ECG features are computed.
+%        t_window_end: vector of window end times within which ECG features are computed.
+%        configs: configs struct, see below for details
 %
-%  This program is distributed in the hope that it will be useful,
-%  but WITHOUT ANY WARRANTY; without even the implied warranty of
-%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-%  GNU General Public License for more details.
+% OUTPUT: HRV_stats: Struct of HRV features
+% ---
+% Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
 %
-%  You should have received a copy of the GNU General Public License
-%  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-function [HRV_stats] = get_HRV_features(RR_ts, RR_times, window_start_times, window_end_times, opts)
+% Released under the GNU General Public License
+%
+% Copyright (C) 2022  Eoin Finnegan
+% University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
+% eoin.finnegan@eng.ox.ac.uk
+%
+% Referencing this work
+%
+% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
+%
+% Relevant literature:
+
+
 narginchk(2, inf);
 if isempty(RR_times) % Return a nothing
     HRV_stats.SDRR = nan(1,1);
@@ -31,7 +39,6 @@ if isempty(RR_times) % Return a nothing
     HRV_stats.LF_div_HF = nan(1,1);
     
     % Non linear
-    %     HRV_stats.samp_entropy = nan(1,1); % TODO!!
     HRV_stats.poincare_SDD1 = nan(1,1); %thought to be equivalent to RMSSD - short term HRV (sympathetic?)%Vasoconstriction is influenced by the low frequency sympathetic nervous system
     HRV_stats.poincare_SDD2 = nan(1,1);
     HRV_stats.poincare_area = nan(1,1);
@@ -39,20 +46,20 @@ if isempty(RR_times) % Return a nothing
     return
 end
 
-if nargin < 3 || isempty(window_start_times) || isempty(window_end_times)
+if nargin < 3 || isempty(t_window_start) || isempty(t_window_end)
     %Recommended by the HR variability task force Camm et al 1996
     window_length_time = 60;
     window_step_time = 60;
-    window_start_times = 0:window_step_time:(RR_times(end)-window_step_time);
-    window_end_times = window_start_times + window_length_time;
+    t_window_start = 0:window_step_time:(RR_times(end)-window_step_time);
+    t_window_end = t_window_start + window_length_time;
 end
 % Set default params
-if nargin < 5 || isempty(opts)
-   opts = struct(); 
+if nargin < 5 || isempty(configs)
+   configs = struct(); 
 end
-default_opts.plot_flag = 0;
-default_opts.signal_name = 'RR interval';
-opts = func.aux_functions.update_with_default_opts(opts, default_opts);
+default_configs.plot_flag = 0;
+default_configs.signal_name = 'RR interval';
+configs = func.aux_functions.update_with_default_opts(configs, default_configs);
 
 
 if length(RR_ts) ~= length(RR_times)
@@ -71,15 +78,15 @@ RR.t_beat = RR_times;
 RR.t = 0:(1/fs_new):RR.t_beat(end);
 RR.ts = interp1( RR.t_beat, RR.ts_beat,  RR.t, 'PCHIP', 'extrap');
 %% Define the window start and end times
-if isempty(window_start_times)
-    window_start_times = RR_times(1);
-    window_end_times = RR_times(end);
+if isempty(t_window_start)
+    t_window_start = RR_times(1);
+    t_window_end = RR_times(end);
 end
 
-window_start = floor(window_start_times *fs_new)+1;
-window_end = floor(window_end_times *fs_new);
+window_start = floor(t_window_start *fs_new)+1;
+window_end = floor(t_window_end *fs_new);
 window_end(window_end > length(RR.t)) = length(RR.t);
-num_windows = length(window_start_times);
+num_windows = length(t_window_start);
 
 
 %% Initialise features
@@ -97,7 +104,6 @@ HRV_stats.T_power   = nan(num_windows,1);
 % HRV_stats.LF_div_HF = nan(num_windows,1);
 
 % Non linear
-HRV_stats.samp_entropy = nan(num_windows,1); % TODO!!
 HRV_stats.poincare_SDD1 = nan(num_windows,1); %thought to be equivalent to RMSSD - short term HRV (sympathetic?)
 HRV_stats.poincare_SDD2 = nan(num_windows,1);
 % poincare_area = nan(num_windows,1);
@@ -107,7 +113,7 @@ R = [cos(-pi/4) -sin(-pi/4);sin(-pi/4)  cos(-pi/4)] ;
 
 
 for wind_idx = 1:num_windows
-    hrv_window_beat = RR.ts_beat(and(RR.t_beat> window_start_times(wind_idx),RR.t_beat < window_end_times(wind_idx) ));
+    hrv_window_beat = RR.ts_beat(and(RR.t_beat> t_window_start(wind_idx),RR.t_beat < t_window_end(wind_idx) ));
     hrv_window = RR.ts(window_start(wind_idx):window_end(wind_idx));
     if length(hrv_window) < 2
         continue
@@ -163,16 +169,16 @@ HRV_stats.poincare_SDD1_SDD2 = HRV_stats.poincare_SDD1./ HRV_stats.poincare_SDD2
 
 
 %% PLOT
-if opts.plot_flag
+if configs.plot_flag
     
     fields = fieldnames(HRV_stats);
     fields_labels = strrep(fields, '_', ' ');
-    window_centres = (window_start_times + window_end_times)/2;
+    window_centres = (t_window_start + t_window_end)/2;
     window_centres = window_centres/60;
     
     
-    colours = constants_def('Colours');
-    figure
+    colours = func.aux_functions.define_colours();
+    figure('Position', [3061         -66        1809         897])
     num_cols = 4;
     num_rows = ceil((1+length(fields))/num_cols);
     
@@ -184,7 +190,7 @@ if opts.plot_flag
     hold on
     plot(RR.t/60, RR.ts,'Color', colours.red)
     legend('Original', 'Interpolated')
-    ylabel(opts.signal_name)
+    ylabel(configs.signal_name)
     xlabel('Time (mins)')
     
     hold on
@@ -197,12 +203,7 @@ if opts.plot_flag
     end
     
     linkaxes(ax,'x')
-    set(gcf, 'Position', [3061         -66        1809         897])
-    
+    func.plot.tightfig();
 end
-
-
-% HRV_stats.t = (window_start_times + window_end_times)/2;;
-
 end
 

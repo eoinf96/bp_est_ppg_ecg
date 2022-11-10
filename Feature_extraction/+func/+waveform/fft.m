@@ -30,6 +30,9 @@ narginchk(2, inf)
 if nargin < 3 || isempty(configs)
     configs  = struct();
 end
+if nargin < 4
+    plot_flag = false;
+end
 default_configs.window_data = 0; % Whether to multiple the signal by a Hamming window in order to reduce the effect of discontinuities
 default_configs.detrend =1;
 configs = func.aux_functions.update_with_default_opts(configs, default_configs);

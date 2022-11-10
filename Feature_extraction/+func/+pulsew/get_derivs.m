@@ -40,7 +40,7 @@ if configs.max_deriv_order > length(deriv_names)
 end
 %% Get derivs
 dt = 1/fs;
-for der_i = 1:length(deriv_names)
+for der_i = 1:configs.max_deriv_order
     derivs.(deriv_names{der_i})  = func.waveform.savitzky_golay_deriv(ts, der_i, configs.s_g_filter_len)./(dt.^(der_i));
 end
 end

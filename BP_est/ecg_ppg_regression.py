@@ -21,40 +21,38 @@ This script runs the regression model for the features of the ECG and PPG
 
 import pandas as pd
 import matplotlib.pyplot as plt
-from classes import MOLLIE_session, RegressionModel
-from pickle_functions import pickle_load
+# from classes import MOLLIE_session, RegressionModel
 
 if __name__ == "__main__":
 
     #### MOLLIE session cannot be provided as it contains
     #### healthy volunteer demographic data that is confidential
-    MOLLIE = MOLLIE_session()
-
-    for device in ["Stowood", "Cardioscreen", "Philips"]:
-
-        df_ECG = pickle_load("pickles/ECG/df_ECG_set_delays_no_filter_" + device)
-        df_PPG = pickle_load("pickles/PPG/df_PPG_set_delays_no_filter_" + device)
-        df_PAT = pickle_load("pickles/PAT/df_PAT_set_delays_no_filter_" + device)
-
-        df = pd.concat([df_ECG, df_PPG, df_PAT], axis=1, join="inner")
-        df = df.drop("SBP", axis=1)
-        df["BP"] = df_ECG.SBP
-
-        mdl = RegressionModel(
-            dataset=MOLLIE,
-            df=df,
-            eval_method="cv",
-            model_name="SVM",
-            add_demographics=True,
-        )
-        mdl.z_norm_df()
-        mdl.run_model(
-            run_hyper_param_tuning=True,
-            plot_flag=False,
-            num_features=30,
-            do_feat_optimisation=False,
-        )
-        mdl.save_model(file_name="All_feat_delay_SVM_30_z_no_filter_" + device)
+    # MOLLIE = MOLLIE_session()
 
 
-    plt.show()
+    df_PPG = pd.read_csv('data/PPG_features.csv')
+    df_ECG = pd.read_csv('data/ECG_features.csv')
+    df_PAT = pd.read_csv('data/PAT_features.csv')
+
+    df = pd.concat([df_ECG, df_PPG], axis=1, join="inner")
+    df = pd.concat([df, df_PAT], axis=1, join="inner")
+    df = df.drop("SBP", axis=1)
+    df["BP"] = df_ECG.SBP
+
+    mdl = RegressionModel(
+        dataset=MOLLIE,
+        df=df,
+        eval_method="cv",
+        model_name="SVM",
+        add_demographics=True,
+    )
+    mdl.z_norm_df()
+    mdl.run_model(
+        run_hyper_param_tuning=True,
+        plot_flag=False,
+        num_features=30,
+        do_feat_optimisation=False,
+    )
+
+
+plt.show()

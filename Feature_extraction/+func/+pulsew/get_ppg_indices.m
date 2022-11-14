@@ -325,8 +325,9 @@ end
 for beat_no = 1 : num_beats
     %     curr = [];
     %get current pulse
-    if PPG.sqi_beat(beat_no) ==0 
-        continue        
+    if PPG.sqi_beat(beat_no) ==0
+        pw_inds = local_get_pulse_inds(1, [], [], [], beat_no);
+        continue
     end
     
     curr_els = PPG.onsets(beat_no):PPG.onsets(beat_no+1);
@@ -346,11 +347,11 @@ for beat_no = 1 : num_beats
         curr.t = curr.t / curr.t(end);
         % Get derivatives
         curr.derivs = func.pulsew.get_derivs(curr.ts, curr.fs);
-    end    
-    pw_inds = local_get_pulse_inds(fid_pts, curr, pw_inds, beat_no);    
+    end
+    pw_inds = local_get_pulse_inds(0, fid_pts, curr, pw_inds, beat_no);
 end
 
- % - Ratio of diastolic to systolic area (called Inflection point area)
+% - Ratio of diastolic to systolic area (called Inflection point area)
 pw_inds.IPA = pw_inds.A2 ./ pw_inds.A1;
 
 % - Inflection and Harmonic area ratio (IHAR) (from Wang et al) - "Noninvasive cardiac output estimation using a novel PPG index"
@@ -362,11 +363,11 @@ if isfield(fid_pts, 'g1')
     pw_inds.gauss_RTT_Rubins = fid_pts.g3.mu - fid_pts.g1.mu; % Transit time of reflected wave
     pw_inds.gauss_AIx_Rubins = (fid_pts.g1.amp - fid_pts.g2.amp)./fid_pts.g1.amp; % Augmentation index
     pw_inds.gauss_RI_Rubins = fid_pts.g3.amp./fid_pts.g1.amp; % Reflection index
-
+    
     %features I made from looking at videos
     pw_inds.gauss_amp4_amp1 = fid_pts.g4.amp./fid_pts.g1.amp;
     pw_inds.gauss_sigma4_amp1 = fid_pts.g4.sigma./fid_pts.g1.amp;
-
+    
     %Add gaussian parameters as fiducial points
     pw_inds.g1_amp = fid_pts.g1.amp;
     pw_inds.g1_mu = fid_pts.g1.mu;
@@ -431,126 +432,132 @@ end
 
 %% Local funcs
 
-function pw_inds = local_get_pulse_inds(fid_pts, curr, pw_inds, beat_no)
-    % Local function to return all pw inds that require assessment on a beat by beat level
-    find_crossing = @(v, t) find((v(:)-t).*circshift((v(:)-t), [-1 0]) <= 0);
+function pw_inds = local_get_pulse_inds(set_nan, fid_pts, curr, pw_inds, beat_no)
+% Local function to return all pw inds that require assessment on a beat by beat level
+find_crossing = @(v, t) find((v(:)-t).*circshift((v(:)-t), [-1 0]) <= 0);
 
-    
-    % Skip if there isn't sufficient information for this pulse wave
+
+% Skip if there isn't sufficient information for this pulse wave
+if isstruct(fid_pts)
     if isnan(fid_pts.s.ind(beat_no)) || isnan(fid_pts.f1.ind(beat_no)) || isnan(fid_pts.dic.ind(beat_no))
-        return
+        set_nan =1;
     end
-    
-    starting_ind = fid_pts.f1.ind(beat_no) - 1;
-    %% AREAS
-    % find baseline of pulse wave (joining initial pulse onset to final pulse onset)
-    curr_dic_ind = fid_pts.dic.ind(beat_no) - starting_ind ; 
+end
 
-    % - systolic area
-    %calculate area -- sum up
-    %         A1(beat_no) = sum(curr.ts(1:curr_dic_ind))/( fs*pulse_amp(beat_no));
-    pw_inds.A1(beat_no) = trapz(curr.ts(1:curr_dic_ind))/curr.fs;
-
-    mean_sys = mean(curr.ts(1:curr_dic_ind));
-
-    % - diastolic area
-    pw_inds.A2(beat_no) = trapz(curr.ts(curr_dic_ind:end))/curr.fs;
-
-    mean_dias = mean(curr.ts(curr_dic_ind:end));
-        
-    pw_inds.sVRI(beat_no) = mean_dias/mean_sys;
-    
-    %% Widths 
-    %25
-    cutoff_25 = 0.25*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
-    cutoff_25 = cutoff_25 + fid_pts.f1.amp(beat_no);
-    crossing_25 = find_crossing(curr.ts, cutoff_25);
-    if length(crossing_25) >1
-        pw_inds.width25(beat_no) = curr.t(crossing_25(end)) - curr.t(crossing_25(1));
+if set_nan
+    pw_inds_names = {'A1', 'A2', 'sVRI', 'width25', 'width50', 'width75', 'NHA', 'skewness', 'kurtosis', 'sp_mean', 'sp_var', 'dp_mean', 'dp_var', 'PPG_AI'};
+    if isfield(fid_pts, 'g1')
+        pw_inds_names = [pw_inds_names, {'gauss_AI', 'gauss_RI', 'gauss_sys_dias', 'gauss_LVET'}];
     end
-    
-    
-    %50
-    cutoff_50 = 0.5*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
-    cutoff_50 = cutoff_50 + fid_pts.f1.amp(beat_no);
-    crossing_50 = find_crossing(curr.ts, cutoff_50);
-    if length(crossing_50) >1
-        pw_inds.width50(beat_no) = curr.t(crossing_50(end)) - curr.t(crossing_50(1));
+    for pw_n_idx = 1:length(pw_inds_names)
+        pw_inds.(pw_inds_names{pw_n_idx})(beat_no) = nan;
     end
-    
-    
-    
-    %75
-    cutoff_75 = 0.75*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
-    cutoff_75 = cutoff_75 + fid_pts.f1.amp(beat_no);
-    crossing_75 = find_crossing(curr.ts, cutoff_75);
-    if length(crossing_75) >1
-        pw_inds.width75(beat_no) = curr.t(crossing_75(end)) - curr.t(crossing_75(1));
-    end
-    
-    
-    %% Frequency features
-    
+    return
+end
+
+
+starting_ind = fid_pts.f1.ind(beat_no) - 1;
+%% AREAS
+% find baseline of pulse wave (joining initial pulse onset to final pulse onset)
+curr_dic_ind = fid_pts.dic.ind(beat_no) - starting_ind ;
+
+% - systolic area
+%calculate area -- sum up
+%         A1(beat_no) = sum(curr.ts(1:curr_dic_ind))/( fs*pulse_amp(beat_no));
+pw_inds.A1(beat_no) = trapz(curr.ts(1:curr_dic_ind))/curr.fs;
+mean_sys = mean(curr.ts(1:curr_dic_ind));
+
+
+% - diastolic area
+pw_inds.A2(beat_no) = trapz(curr.ts(curr_dic_ind:end))/curr.fs;
+mean_dias = mean(curr.ts(curr_dic_ind:end));
+
+%Ratio of areas
+pw_inds.sVRI(beat_no) = mean_dias/mean_sys;
+
+%% Widths
+%25
+cutoff_25 = 0.25*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
+cutoff_25 = cutoff_25 + fid_pts.f1.amp(beat_no);
+crossing_25 = find_crossing(curr.ts, cutoff_25);
+if length(crossing_25) >1
+    pw_inds.width25(beat_no) = curr.t(crossing_25(end)) - curr.t(crossing_25(1));
+end
+
+%50
+cutoff_50 = 0.5*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
+cutoff_50 = cutoff_50 + fid_pts.f1.amp(beat_no);
+crossing_50 = find_crossing(curr.ts, cutoff_50);
+if length(crossing_50) >1
+    pw_inds.width50(beat_no) = curr.t(crossing_50(end)) - curr.t(crossing_50(1));
+end
+
+%75
+cutoff_75 = 0.75*(fid_pts.s.amp(beat_no)-fid_pts.f1.amp(beat_no));
+cutoff_75 = cutoff_75 + fid_pts.f1.amp(beat_no);
+crossing_75 = find_crossing(curr.ts, cutoff_75);
+if length(crossing_75) >1
+    pw_inds.width75(beat_no) = curr.t(crossing_75(end)) - curr.t(crossing_75(1));
+end
+%% Frequency features
+
 % - Normalised Harmonic Area (from Wang et al) - "Noninvasive cardiac output estimation using a novel PPG index"
 % - Skewness and Kurtosis from Slapnicar et al
-    if curr.fs ~=0
-        fft_opts.detrend = 1;
-        pw = func.waveform.fft(curr.ts, curr.fs, fft_opts);
-        [~, loc] = findpeaks(pw);
+if curr.fs ~=0
+    fft_opts.detrend = 1;
+    pw = func.waveform.fft(curr.ts, curr.fs, fft_opts);
+    [~, loc] = findpeaks(pw);
+    
+    pw_inds.NHA(beat_no) = 1-(sum(pw(loc(2:end)))/sum(pw(loc(1:end))));
+    pw_inds.skewness(beat_no) = skewness(curr.ts);
+    pw_inds.kurtosis(beat_no) = kurtosis(curr.ts);
+end
 
-        pw_inds.NHA(beat_no) = 1-(sum(pw(loc(2:end)))/sum(pw(loc(1:end))));
+%% First derivative
 
-        pw_inds.skewness(beat_no) = skewness(curr.ts);
-        pw_inds.kurtosis(beat_no) = kurtosis(curr.ts);
+notch_loc           = fid_pts.dic.ind(beat_no) - starting_ind;
+VPG = curr.derivs.first;
+
+sys_deriv        = VPG(1:notch_loc);
+dia_deriv        = VPG(notch_loc:end);
+
+pw_inds.sp_mean(beat_no) = mean(sys_deriv, 'omitnan');
+pw_inds.sp_var(beat_no)  = var(sys_deriv, 'omitnan');
+pw_inds.dp_mean(beat_no) = mean(dia_deriv, 'omitnan');
+pw_inds.dp_var(beat_no)  = var(dia_deriv, 'omitnan');
+%% second derivative
+% - PPG AI - Pilt et al
+
+if ~or(isnan(fid_pts.d.ind(beat_no)), isnan(fid_pts.b.ind(beat_no)))
+    pw_inds.PPG_AI(beat_no) = curr.ts(fid_pts.d.ind(beat_no) - starting_ind)/curr.ts(fid_pts.b.ind(beat_no) - starting_ind);
+end
+
+%% Do Gauss features here
+
+if isfield(fid_pts, 'g1')
+    gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
+    
+    %Get g1, g2, g3, g4
+    for idx = 1:4
+        eval(['g',num2str(idx),' = gaussian([fid_pts.g',num2str(idx),'.amp(beat_no), fid_pts.g',num2str(idx),'.mu(beat_no), fid_pts.g',num2str(idx),'.sigma(beat_no)], curr.t);'])
     end
-     
-    %% First derivative
-            
-    notch_loc           = fid_pts.dic.ind(beat_no) - starting_ind;    
-    VPG = curr.derivs.first;
+    systolic = g1 + g2;
+    dias = g3+g4;
+    pw_inds.gauss_AI(beat_no) = max(systolic) - fid_pts.g3.amp(beat_no);
+    pw_inds.gauss_RI(beat_no) = (sum(systolic) - sum(g3))./curr.fs;
+    pw_inds.gauss_sys_dias(beat_no) = sum(systolic)/sum(dias);
     
-    sys_deriv        = VPG(1:notch_loc);
-    dia_deriv        = VPG(notch_loc:end);
+    % Get LVET
+    ds_dt = diff(systolic);
+    ds2_dt2 = diff(ds_dt);
+    ds3_dt3 = diff(ds2_dt2);
     
-    pw_inds.sp_mean(beat_no) = mean(sys_deriv, 'omitnan');
-    pw_inds.sp_var(beat_no)  = var(sys_deriv, 'omitnan');
-    pw_inds.dp_mean(beat_no) = mean(dia_deriv, 'omitnan');
-    pw_inds.dp_var(beat_no)  = var(dia_deriv, 'omitnan');
-   
-    %% second derivative
-    % - PPG AI - Pilt et al
-     
-   if ~or(isnan(fid_pts.d.ind(beat_no)), isnan(fid_pts.b.ind(beat_no)))
-       pw_inds.PPG_AI(beat_no) = curr.ts(fid_pts.d.ind(beat_no) - starting_ind)/curr.ts(fid_pts.b.ind(beat_no) - starting_ind);
-   end
-   
-   %% Do Gauss features here
-   
-   if isfield(fid_pts, 'g1')
-       gaussian = @(b,x) b(1) * exp(-(x - b(2)).^2/b(3));
- 
-        %Get g1, g2, g3, g4
-        for idx = 1:4
-            eval(['g',num2str(idx),' = gaussian([fid_pts.g',num2str(idx),'.amp(beat_no), fid_pts.g',num2str(idx),'.mu(beat_no), fid_pts.g',num2str(idx),'.sigma(beat_no)], curr.t);'])
-        end
-        systolic = g1 + g2;
-        dias = g3+g4;
-        
-        pw_inds.gauss_AI(beat_no) = max(systolic) - fid_pts.g3.amp(beat_no);
-        pw_inds.gauss_RI(beat_no) = (sum(systolic) - sum(g3))./curr.fs;
-        pw_inds.gauss_sys_dias(beat_no) = sum(systolic)/sum(dias);
-        
-        % Get LVET
-        ds_dt = diff(systolic);
-        ds2_dt2 = diff(ds_dt);
-        ds3_dt3 = diff(ds2_dt2);
-        
-        
-        [~, loc_peaks] = findpeaks(ds3_dt3);
-        if length(loc_peaks) > 2
-            pw_inds.gauss_LVET(beat_no) = (loc_peaks(3) - loc_peaks(1))/( curr.fs);
-        end
-   
-   end
+    
+    [~, loc_peaks] = findpeaks(ds3_dt3);
+    if length(loc_peaks) > 2
+        pw_inds.gauss_LVET(beat_no) = (loc_peaks(3) - loc_peaks(1))/( curr.fs);
+    end
+    
+end
 end
 

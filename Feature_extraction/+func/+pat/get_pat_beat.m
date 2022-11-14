@@ -98,7 +98,7 @@ if isfield(ECG, 'start_datetime') || isfield(PPG, 'start_datetime')
     PAT.start_datetime = ECG.start_datetime;
     PAT.dt_beat = PAT.start_datetime + seconds(PAT.t_beat);
 end
-% PAT= func.aux_functions.update_good(PAT);
+PAT= func.aux_functions.update_good(PAT);
 %% plot beat by beat PAT values
 if plot_flag
    

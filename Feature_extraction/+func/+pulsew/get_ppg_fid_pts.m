@@ -6,19 +6,19 @@ function [varargout ] = get_ppg_fid_pts(PPG,config, plot_flag)
 % INPUT: PPG: PPG signal
 %       configs: configs struct, see below for details
 %       plot_flag: flag whether to plot a summary
-%
+% 
 % OUTPUT: pts: struct defining the locations, timings and amplitudes of all fiducial points
 %         norm_pts: struct defining the locations, timings and amplitudes of all fiducial points using normalised PPG pulses -- only returned if config.do_normalise == 1
 %           derivs: struct of PPG derivatives
 % ---
 % Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure.
-%
+% 
 % Released under the GNU General Public License
 %
 % Copyright (C) 2022  Eoin Finnegan
 % University of Oxford, Insitute of Biomedical Engineering, CIBIM Lab
 % eoin.finnegan@eng.ox.ac.uk
-%
+% 
 % Referencing this work
 %
 % Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
@@ -42,10 +42,10 @@ end
 if nargin < 3
     plot_flag  = false;
 end
-default_config.fid_pt_names = allowed_fid_pt_names; % Cell of strings defining the fiducial points to be located
+default_config.fid_pt_names = allowed_fid_pt_names;
 default_config.gauss_continue_points = 0; % Used in Gaussian fitting
-default_config.do_e_for_dic = true; % If to use e as the location of dicrotic notch - If set to false then Balmer definition is used
-default_config.do_filter = 1; % Flags whether to filter the PPG signal
+default_config.do_e_for_dic = false; % If to use e as the location of dicrotic notch
+default_config.do_filter = 1;
 default_config.do_normalise = 1; % Whether to also return the normalised fiducial points
 config = func.aux_functions.update_with_default_opts(config, default_config);
 fid_pt_names = config.fid_pt_names;
@@ -53,9 +53,8 @@ fid_pt_names = config.fid_pt_names;
 config.do_gauss = any(strcmp(fid_pt_names, 'gauss'));
 %% Error checks
 if isempty(PPG.ts)
-    varargout{1} = [];
-    if config.do_normalise; varargout{end+1} = []; end
-    varargout{end+1} = [];
+    pts = [];
+    derivs = [];
     return
 end
 %Are there any unsupported fiducial points?
@@ -70,7 +69,7 @@ if any(strcmp(fid_pt_names, 'tangent'))
     fid_pt_names{end+1} = 'tangent';
 end
 %% Filter Signal
-if config.do_filter
+if config.do_filter    
     % Butterworth IIR bandpass filter
     [b,a] = butter(8,10/(PPG.fs/2), 'low');
     ts_filt = filtfilt(b,a,PPG.ts);
@@ -115,7 +114,8 @@ halfpoint_values = PPG.ts(PPG.onsets(1:end-1)) + ...
 %% For dicrotic notch detection if using Balmer notch detection
 dic_detection_vals.T = PPG.t(PPG.onsets(2:end)) - PPG.t(PPG.onsets(1:end-1));
 dic_detection_vals.Tau_func = @(t, t_peak, T)(t - t_peak)/(T - t_peak);
-dic_detection_vals.most_recent_t_systole = cell(num_beats, 1);
+% dic_detection_vals.most_recent_t_systole = cell(num_beats, 1);
+dic_detection_vals.most_recent_t_systole = nan(num_beats, 1);
 dic_detection_vals.num_beats_average = 10;
 dic_detection_vals.Beta = 5;
 %% Run loop
@@ -133,11 +133,11 @@ for pulse_no = 1 : num_beats
     curr.t = curr.t - t_start;
     curr.ts = ts_filt(curr_els);
     
-    % Correct for low frequency baseline drift in a single beat
+    % Correct for low frequency baseline drift in a single beat 
     correction_line = linspace(curr.ts(1), curr.ts(end), length(curr.ts));
     curr.ts = curr.ts - correction_line' + curr.ts(1);
     
-    curr.ts_orig = curr.ts;
+    curr.ts_orig = curr.ts;    
     
     if config.do_normalise
         curr.ts_norm = curr.ts - min(curr.ts);
@@ -151,7 +151,7 @@ for pulse_no = 1 : num_beats
     for d_idx = 1:length(deriv_names)
         curr.derivs.(deriv_names{d_idx}) = derivs.(deriv_names{d_idx})(curr_els);
     end
-    %% Identify fiducial points
+    %% Identify fiducial points    
     %%%%%%%%START%%%%%%%% find f1 and f2
     if flags.do_f1
         store.f1(pulse_no) = 1;
@@ -230,7 +230,7 @@ for pulse_no = 1 : num_beats
         end
         store.b(pulse_no) = temp_b;
     end
-    %%%%%%%%END%%%%%%%%
+       %%%%%%%%END%%%%%%%%
     
     %%%%%%%%START%%%%%%%%
     if flags.do_p1pk || flags.do_p1in
@@ -276,8 +276,8 @@ for pulse_no = 1 : num_beats
         
         
         %%%%%%%%START%%%%%%%%
-        if flags.do_dic
-            if config.do_e_for_dic
+        if flags.do_dic 
+           if config.do_e_for_dic
                 if store.e(pulse_no) < store.s(pulse_no)
                     try
                         if store.dic(pulse_no-1) < store.f2(pulse_no)
@@ -295,12 +295,11 @@ for pulse_no = 1 : num_beats
             else %Dicrotic notch detection by Balmer et al - used in ICU settings where dicrotic notch is diminished
                 t_peak = curr.t(store.s(pulse_no));
                 curr.Tau = dic_detection_vals.Tau_func(curr.t, t_peak, dic_detection_vals.T(pulse_no));
-                mat_most_recent_t_systole = cell2mat(dic_detection_vals.most_recent_t_systole);
                 
-                if length(mat_most_recent_t_systole) < dic_detection_vals.num_beats_average
+                if sum(~isnan(dic_detection_vals.most_recent_t_systole)) < dic_detection_vals.num_beats_average
                     t_w_max = 0.45 - 0.1/dic_detection_vals.T(pulse_no);
                 else
-                    t_w_max = mean(mat_most_recent_t_systole(end-(dic_detection_vals.num_beats_average-1):end));
+                    t_w_max = mean(dic_detection_vals.most_recent_t_systole((pulse_no - dic_detection_vals.num_beats_average+1):pulse_no), 'omitnan');
                 end
                 Tau_w_max = dic_detection_vals.Tau_func(t_w_max, t_peak, dic_detection_vals.T(pulse_no));
                 dic_detection_vals.alpha = (dic_detection_vals.Beta * Tau_w_max  - 2* Tau_w_max +1)/(1 - Tau_w_max );
@@ -320,12 +319,12 @@ for pulse_no = 1 : num_beats
                 loc_notch = func.waveform.find_pks_trs(weighted_deriv, 'pks');
                 peak_val = weighted_deriv(loc_notch);
                 if ~isempty(loc_notch)
-                    [~, i_loc_notch] = max(peak_val);
+                    [~, i_loc_notch] = max(peak_val); 
                     store.dic(pulse_no) = loc_notch(i_loc_notch);
                     
                     %Update most recent t_sys
                     t_w_max = curr.t(store.dic(pulse_no));
-                    dic_detection_vals.most_recent_t_systole{pulse_no} = t_w_max;
+                    dic_detection_vals.most_recent_t_systole(pulse_no) = t_w_max;
                 end
             end
         end
@@ -479,13 +478,7 @@ for pulse_no = 1 : num_beats
         
         
         % - timing of fiducial point
-        try
-            t = PPG.t(curr_temp_el(pulse_no));
-        catch
-            %This is for tangent that has a fractal index value
-            t = interp1(1:length(PPG.t),PPG.t,curr_temp_el);
-        end
-        pts.(fid_pt_names{fid_pt_no}).t(pulse_no) = t;
+        pts.(fid_pt_names{fid_pt_no}).t(pulse_no) = (curr_temp_el-1)/ PPG.fs;
         
         
         %%%% NORMALISED pulse
@@ -623,11 +616,13 @@ if plot_flag
     end
     
     linkaxes(ax, 'x')
-    func.plot.tightfig();
+    func.plot.tightfig();    
 end
 
 
 end
+
+
 
 
 %% Local funcs

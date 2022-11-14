@@ -23,15 +23,13 @@ function [pw, ff] = fft(ts, fs, configs, plot_flag)
 % Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, P., Tarassenko, L. and Villarroel, M., 2022. Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure. Submitted to Scientific reports
 %
 %
-
-%
 narginchk(2, inf)
 %% Update opts
 if nargin < 3 || isempty(configs)
     configs  = struct();
 end
 if nargin < 4
-    plot_flag = false;
+    plot_flag  = false;
 end
 default_configs.window_data = 0; % Whether to multiple the signal by a Hamming window in order to reduce the effect of discontinuities
 default_configs.detrend =1;

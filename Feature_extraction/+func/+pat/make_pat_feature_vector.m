@@ -26,6 +26,7 @@ if nargin < 4
     configs = struct();
 end
 default_configs.sqi_threshold = 0;
+default_configs.window_average_sqi_thresh = 0.4;
 configs = func.aux_functions.update_with_default_opts(configs, default_configs);
 %% Run loop
 num_windows = length(t_window_start);
@@ -34,7 +35,13 @@ if ~isfield(PAT, 'good_beat'); PAT.good_beat = PAT.ts_beat; PAT.good_beat(PAT.sq
 feat_store = cell(num_windows, 1);
 for wind_idx = 1:num_windows
     ind_window = and(PAT.t_beat > t_window_start(wind_idx), PAT.t_beat < t_window_end(wind_idx));
-    feat_store{wind_idx} = mean(PAT.good_beat(ind_window), 1, 'omitnan');
+    sqi_w = mean(PAT.sqi_beat(ind_window), 'omitnan');
+    if  sqi_w >= configs.window_average_sqi_thresh
+        feat_store{wind_idx} = mean(PAT.good_beat(ind_window), 1, 'omitnan');
+    else
+        feat_store{wind_idx} = nan;
+    end
+    
 end
 
 feat_tab = array2table(cell2mat(feat_store), 'VariableNames', {'PAT'});

@@ -47,6 +47,7 @@ default_config.gauss_continue_points = 0; % Used in Gaussian fitting
 default_config.do_e_for_dic = false; % If to use e as the location of dicrotic notch
 default_config.do_filter = 1;
 default_config.do_normalise = 1; % Whether to also return the normalised fiducial points
+default_config.gauss_error_threshold = 0.03;
 config = func.aux_functions.update_with_default_opts(config, default_config);
 fid_pt_names = config.fid_pt_names;
 %Do we need to do Gaussian decomposition?

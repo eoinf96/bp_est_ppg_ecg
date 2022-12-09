@@ -119,8 +119,11 @@ sigs = plot_PPG2(sigs, params, fid_pts, opts);
 
 
 h_b(3) = subplot('Position', [x_offset,y_offset+(n_sub-3)*y_inc,width,y_inc - 0.01]);
+if isfield(PPG.norm_fid_pts, 'g1')
 sigs = plot_gauss(sigs, params, PPG, do_gauss_legend);
-
+else
+    warning('No PPG Gauss plotted')
+end
 
 h_b(4) = subplot('Position', [x_offset,y_offset+(n_sub-4)*y_inc,width,y_inc - 0.01]);
 sigs = plot_VPG(sigs, params,fid_pts,  opts);

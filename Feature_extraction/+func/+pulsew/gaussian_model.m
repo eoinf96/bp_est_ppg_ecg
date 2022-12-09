@@ -34,8 +34,8 @@ if nargin < 5 || isempty(config)
     config = struct();
 end
 default_config.do_normalise = false; 
-default_config.continue_points = true; %Whether we attempt to force consistency by using previous starting points as current starting points
-default_config.error_threshold = 0.03; % Maximum allowable fitting error 
+default_config.gauss_continue_points = true; %Whether we attempt to force consistency by using previous starting points as current starting points
+default_config.gauss_error_threshold = 0.03; % Maximum allowable fitting error 
 config = func.aux_functions.update_with_default_opts(config, default_config);
 
 if nargin < 6
@@ -111,7 +111,7 @@ for pulse_no = 1 : num_beats
     if ~exist('p_opt', 'var')
         p_opt = standard_guess;
     end
-    if config.continue_points
+    if config.gauss_continue_points
         use_standard = 0;
         try
             p_opt_prev = local_fit_model(p_opt,curr.t, curr.ts_norm);
@@ -189,7 +189,7 @@ for pulse_no = 1 : num_beats
 end
 %% Error handling
 % Any Gaussian fit with an error greater than the threshold is set to nan;
-set_rmse_gauss_func = @(x) set_rmse_gauss(x, rmse_error, config.error_threshold);
+set_rmse_gauss_func = @(x) set_rmse_gauss(x, rmse_error, config.gauss_error_threshold);
 pts = structfun(set_rmse_gauss_func, pts, 'UniformOutput', false);
 end
 

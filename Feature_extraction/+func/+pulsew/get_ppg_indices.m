@@ -482,6 +482,8 @@ cutoff_25 = cutoff_25 + fid_pts.f1.amp(beat_no);
 crossing_25 = find_crossing(curr.ts, cutoff_25);
 if length(crossing_25) >1
     pw_inds.width25(beat_no) = curr.t(crossing_25(end)) - curr.t(crossing_25(1));
+else
+    pw_inds.width25(beat_no) = nan;
 end
 
 %50
@@ -490,6 +492,8 @@ cutoff_50 = cutoff_50 + fid_pts.f1.amp(beat_no);
 crossing_50 = find_crossing(curr.ts, cutoff_50);
 if length(crossing_50) >1
     pw_inds.width50(beat_no) = curr.t(crossing_50(end)) - curr.t(crossing_50(1));
+else
+    pw_inds.width50(beat_no) = nan;
 end
 
 %75
@@ -498,6 +502,8 @@ cutoff_75 = cutoff_75 + fid_pts.f1.amp(beat_no);
 crossing_75 = find_crossing(curr.ts, cutoff_75);
 if length(crossing_75) >1
     pw_inds.width75(beat_no) = curr.t(crossing_75(end)) - curr.t(crossing_75(1));
+else
+    pw_inds.width75(beat_no) = nan;
 end
 %% Frequency features
 
@@ -505,10 +511,17 @@ end
 % - Skewness and Kurtosis from Slapnicar et al
 if curr.fs ~=0
     fft_opts.detrend = 1;
-    pw = func.waveform.fft(curr.ts, curr.fs, fft_opts);
-    [~, loc] = findpeaks(pw);
+    [pw, ff] = func.waveform.fft(curr.ts, curr.fs, fft_opts);
+    [peak_vals, loc] = findpeaks(pw);
+    f_1 = ff(loc(peak_vals == max(peak_vals)));
+    N_h = floor((curr.fs/2)/f_1);
+    pw_harmonic_frequencies = nan(N_h, 1);
+    for p_idx = 1:length(pw_harmonic_frequencies)
+        [~, loc_closest] = min(abs(ff - (f_1*p_idx)));
+        pw_harmonic_frequencies(p_idx) = pw(loc_closest);
+    end
     
-    pw_inds.NHA(beat_no) = 1-(sum(pw(loc(2:end)))/sum(pw(loc(1:end))));
+    pw_inds.NHA(beat_no) = sum(pw_harmonic_frequencies(2:end))/sum(pw_harmonic_frequencies);
     pw_inds.skewness(beat_no) = skewness(curr.ts);
     pw_inds.kurtosis(beat_no) = kurtosis(curr.ts);
 end
@@ -554,7 +567,12 @@ if isfield(fid_pts, 'g1')
     
     
     [~, loc_peaks] = findpeaks(ds3_dt3);
-    if length(loc_peaks) > 2
+    if length(loc_peaks) ==1
+        pw_inds.gauss_LVET(beat_no) = nan;
+    else
+        if length(loc_peaks) ==2
+            loc_peaks = [1; loc_peaks];
+        end
         pw_inds.gauss_LVET(beat_no) = (loc_peaks(3) - loc_peaks(1))/( curr.fs);
     end
     

@@ -26,6 +26,7 @@ if nargin < 4
     configs = struct();
 end
 default_configs.do_norm = 1;
+default_configs.window_average_sqi_thresh = 0.4;
 configs = func.aux_functions.update_with_default_opts(configs, default_configs);
 %% Error check
 if configs.do_norm
@@ -39,6 +40,11 @@ else
     end
     feats = PPG.pw_inds;
 end
+
+if ~isfield(PPG, 't_beat')
+    PPG.t_beat = PPG.t(PPG.peaks);
+end
+
 %% Run loop
 feat_names = fieldnames(feats);
 feats = struct2array(feats);
@@ -46,8 +52,13 @@ num_windows = length(t_window_start);
 
 feat_store = cell(num_windows, 1);
 for wind_idx = 1:num_windows
-    ind_window = and(PPG.t(PPG.peaks) > t_window_start(wind_idx), PPG.t(PPG.peaks) < t_window_end(wind_idx));
-    feat_store{wind_idx} = mean(feats(ind_window, :), 1, 'omitnan');
+    ind_window = and(PPG.t_beat > t_window_start(wind_idx), PPG.t_beat < t_window_end(wind_idx));
+    sqi_w = mean(PPG.sqi_beat(ind_window), 'omitnan');
+    if  sqi_w >= configs.window_average_sqi_thresh
+        feat_store{wind_idx} = mean(feats(ind_window, :), 1, 'omitnan');
+    else
+        feat_store{wind_idx} = nan(1, length(feat_names));
+    end
 end
 
 feat_tab = array2table(cell2mat(feat_store), 'VariableNames', feat_names);

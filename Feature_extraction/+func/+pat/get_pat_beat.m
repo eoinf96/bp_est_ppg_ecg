@@ -81,11 +81,17 @@ switch distal_point
     otherwise
         error('Unkown distal point')
 end
-PPG.sqi_beat(isnan(PPG.marker.t)) = [];
-PPG.marker.ind(isnan(PPG.marker.t)) = [];
-PPG.marker.t(isnan(PPG.marker.t)) = [];
-PPG.marker.amp(isnan(PPG.marker.amp)) = [];
+
+PPG.marker.t(PPG.sqi_beat ==0) = nan;
+remove_marker = isnan(PPG.marker.t);
+
+PPG.sqi_beat(remove_marker) = [];
+PPG.marker.ind(remove_marker) = [];
+PPG.marker.t(remove_marker) = [];
+PPG.marker.amp(remove_marker) = [];
 %% Get PAT
+
+
 
 if configs.PAT_range_flag
     PAT = func.pat.pat_beat_range(PPG, ECG,configs.PAT_min_value, configs.PAT_max_value ,configs.plot_detail_flag, [], configs );
@@ -98,7 +104,7 @@ if isfield(ECG, 'start_datetime') || isfield(PPG, 'start_datetime')
     PAT.start_datetime = ECG.start_datetime;
     PAT.dt_beat = PAT.start_datetime + seconds(PAT.t_beat);
 end
-PAT= func.aux_functions.update_good(PAT);
+% PAT= func.aux_functions.update_good(PAT);
 %% plot beat by beat PAT values
 if plot_flag
    

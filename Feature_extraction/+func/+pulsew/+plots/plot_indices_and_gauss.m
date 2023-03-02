@@ -30,10 +30,10 @@ if ~ isfield(fid_pts, 'dic')
     warning('Cannot make plot')
     return
 end
+do_gauss = isfield(PPG.norm_fid_pts, 'g1');
+
 %get colours for plotting
 global colours
-
-% colours = constants_def('Colours');
 colours = func.aux_functions.define_colours();
 
 %% Segment pulse and its derivatives
@@ -106,34 +106,35 @@ sigs.t = sigs.t/max(sigs.t);
 
 y_offset = 0.06;
 y_inc = 0.187;
-n_sub = 5;
+n_sub = 5 - double(do_gauss);
 x_offset = 0.12;
 width = 0.88;
 %% - plot sig
-
-h_b(1) = subplot('Position', [x_offset,y_offset+(n_sub-1)*y_inc,width,y_inc-0.01]);
+i_plot = 1;
+h_b(i_plot) = subplot('Position', [x_offset,y_offset+(n_sub-1)*y_inc,width,y_inc-0.01]);i_plot = i_plot+1;
 sigs = plot_PPG1(sigs, params, fid_pts, opts);
 
-h_b(2) = subplot('Position', [x_offset,y_offset+(n_sub-2)*y_inc,width,y_inc-0.01]);
+h_b(i_plot) = subplot('Position', [x_offset,y_offset+(n_sub-i_plot)*y_inc,width,y_inc-0.01]);i_plot = i_plot+1;
 sigs = plot_PPG2(sigs, params, fid_pts, opts);
 
 
-h_b(3) = subplot('Position', [x_offset,y_offset+(n_sub-3)*y_inc,width,y_inc - 0.01]);
-if isfield(PPG.norm_fid_pts, 'g1')
-sigs = plot_gauss(sigs, params, PPG, do_gauss_legend);
+if do_gauss
+    h_b(i_plot) = subplot('Position', [x_offset,y_offset+(n_sub-i_plot)*y_inc,width,y_inc-0.01]);i_plot = i_plot+1;
+    sigs = plot_gauss(sigs, params, PPG, do_gauss_legend);
 else
     warning('No PPG Gauss plotted')
 end
 
-h_b(4) = subplot('Position', [x_offset,y_offset+(n_sub-4)*y_inc,width,y_inc - 0.01]);
+h_b(i_plot) = subplot('Position', [x_offset,y_offset+(n_sub-i_plot)*y_inc,width,y_inc-0.01]);i_plot = i_plot+1;
 sigs = plot_VPG(sigs, params,fid_pts,  opts);
 
-h_b(5) = subplot('Position', [x_offset,y_offset+(n_sub-5)*y_inc,width,y_inc - 0.01]);
+h_b(i_plot) = subplot('Position', [x_offset,y_offset+(n_sub-i_plot)*y_inc,width,y_inc-0.01]);i_plot = i_plot+1;
 plot_APG(sigs, params, fid_pts, opts);
-%% - plot Second derivative
 
 
 linkaxes(h_b, 'x')
+
+func.plot.tightfig();
 end
 
 function normalised  = coords_to_pos(x_coord, y_coord)

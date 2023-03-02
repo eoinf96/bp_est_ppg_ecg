@@ -20,10 +20,11 @@ function configs = return_configs()
 
 
     %%% Fid point config
-    configs.PPG.fid_point.do_fid = 1;
-    configs.PPG.fid_point.gauss_continue_points = true;
-    configs.PPG.fid_point.do_e_for_dic = true;
-    configs.PPG.fid_point.do_normalise = 1;
+    configs.PPG.fid_point.do_normalise = true;              % T/F to both time and amplitude normalise each PPG beat
+    configs.PPG.fid_point.do_fid = true;                    % T/F to detect fiducial points or not
+    configs.PPG.fid_point.gauss_continue_points = true;     % T/F to use the results of the previous beat as the initial conditions for the Gaussian decomposition optimisation of the current beat.
+    configs.PPG.fid_point.do_e_for_dic = true;              % T/F to use the e-wave of the APG as the location of the dicrotic notch - If False, the Balmer weighting function is implemented
+    
 
     %change as necessary
 %     configs.PPG.fid_point.fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', ...

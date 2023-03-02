@@ -19,6 +19,7 @@ load('example_data/PPG_all.mat', 'PPG');
 %% Flags
 flags.plot_ppg_ecg_overview = 0;
 flags.plot_ppg_features_overview = 0;
+flags.plot_PAT_overview = 0;
 %% Parms
 params.window_size = 30;
 params.window_step = 30;
@@ -55,17 +56,17 @@ configs = return_configs;
 PPG.pw_inds                                     = func.pulsew.get_ppg_indices(PPG, 0);
 PPG.norm_pw_inds                                = func.pulsew.get_ppg_indices(PPG, 1);
 %% Get PPG feature vector
-t_window_start = 0:params.window_size:(PPG.t(end)-30);
+t_window_start = 0:params.window_size:(PPG.t(end)-params.window_size);
 t_window_end = t_window_start + params.window_step;
 PPG_feature_table = func.pulsew.make_PPG_feature_vector(PPG, t_window_start, t_window_end);
 %% Plot PPG featuress
 if flags.plot_ppg_features_overview; func.pulsew.plots.plot_indices_and_gauss(PPG, 15); end
 %% Get ECG feature vector
-t_window_start = 0:params.window_size:(ECG.t(end)-30);
+t_window_start = 0:params.window_size:(ECG.t(end)-params.window_size);
 t_window_end = t_window_start + params.window_step;
 ECG_feature_table = func.ecg.make_ECG_feature_vector(ECG, t_window_start, t_window_end, configs_ECG);
 %% Get PAT
-PAT = func.pat.get_pat_beat(ECG, PPG, 'tangent', [], 1);
+PAT = func.pat.get_pat_beat(ECG, PPG, 'tangent', [], flags.plot_PAT_overview);
 PAT_feature_table = func.pat.make_pat_feature_vector(PAT, t_window_start, t_window_end);
 %% Get total feature vector
 feature_vector = [PPG_feature_table, ECG_feature_table, PAT_feature_table];

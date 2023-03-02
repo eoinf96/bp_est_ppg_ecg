@@ -326,7 +326,7 @@ for beat_no = 1 : num_beats
     %     curr = [];
     %get current pulse
     if PPG.sqi_beat(beat_no) ==0
-        pw_inds = local_get_pulse_inds(1, [], [], [], beat_no);
+        pw_inds = local_get_pulse_inds(1, fid_pts, [], pw_inds, beat_no);
         continue
     end
     
@@ -567,7 +567,7 @@ if isfield(fid_pts, 'g1')
     
     
     [~, loc_peaks] = findpeaks(ds3_dt3);
-    if length(loc_peaks) ==1
+    if length(loc_peaks) <2
         pw_inds.gauss_LVET(beat_no) = nan;
     else
         if length(loc_peaks) ==2

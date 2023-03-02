@@ -27,6 +27,7 @@ if nargin < 4
 end
 default_configs.do_norm = 1;
 default_configs.window_average_sqi_thresh = 0.4;
+default_configs.feat_names = nan;
 configs = func.aux_functions.update_with_default_opts(configs, default_configs);
 %% Error check
 if configs.do_norm
@@ -46,7 +47,13 @@ if ~isfield(PPG, 't_beat')
 end
 
 %% Run loop
-feat_names = fieldnames(feats);
+if iscell(configs.feat_names)
+    feat_names = intersect(configs.feat_names, fieldnames(feats), 'stable');
+else
+    feat_names =fieldnames(feats);
+end
+all_feat_names  = fieldnames(feats);
+feats = rmfield(feats, all_feat_names(~ismember(all_feat_names, feat_names)));
 feats = struct2array(feats);
 num_windows = length(t_window_start);
 

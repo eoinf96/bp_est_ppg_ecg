@@ -45,7 +45,7 @@ RF_CONST_VARS = {
 }
 
 
-def svm_regression(mdl, model_vars=SVM_CONST_VARS, run_hyper_param_tuning=True):
+def SVM_regression(mdl, model_vars=SVM_CONST_VARS, run_hyper_param_tuning=True):
     """
 
     :param mdl: mdl of type RegressionMOdel
@@ -86,7 +86,7 @@ def svm_regression(mdl, model_vars=SVM_CONST_VARS, run_hyper_param_tuning=True):
     evaluate_model(mdl, train_df_x, test_df_x)
 
 
-def rf_regression(mdl, model_vars=RF_CONST_VARS, run_hyper_param_tuning=True):
+def RF_regression(mdl, model_vars=RF_CONST_VARS, run_hyper_param_tuning=True):
     """
 
     :param mdl: mdl of type RegressionMOdel

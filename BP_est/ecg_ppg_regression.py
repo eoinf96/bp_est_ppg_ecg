@@ -2,7 +2,7 @@
 This script runs the regression model for the features of the ECG and PPG
 --
  Released under the GNU General Public License
- Copyright (C) 2021  Eoin Finnegan
+ Copyright (C) 2022  Eoin Finnegan
  eoin.finnegan@eng.ox.ac.uk
 
  This program is free software: you can redistribute it and/or modify
@@ -19,40 +19,31 @@ This script runs the regression model for the features of the ECG and PPG
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
+# To do -- Add augmented dataset. Add SHAP. Add feature ranking coefficient
+
 import pandas as pd
 import matplotlib.pyplot as plt
-# from classes import MOLLIE_session, RegressionModel
+from classes import MOLLIE_session, BP_est_dataset
+
+
+def load_df(data_loc='data'):
+    df_PPG = pd.read_csv(data_loc+'/PPG_features.csv')
+    df_ECG = pd.read_csv(data_loc+'/ECG_features.csv')
+    df_PAT = pd.read_csv(data_loc+'/PAT_features.csv')
+
+    df = pd.concat([df_PPG, df_ECG], axis=1, join="inner")
+    df = pd.concat([df, df_PAT], axis=1, join="inner")
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+    return df
+
 
 if __name__ == "__main__":
 
-    #### MOLLIE session cannot be provided as it contains
-    #### healthy volunteer demographic data that is confidential
-    # MOLLIE = MOLLIE_session()
+    df = load_df()
 
+    MOLLIE = MOLLIE_session()
+    BP_est = BP_est_dataset(df=df, study=MOLLIE)
+    BP_est.calibrate_dataset()
+    BP_est.drop_collinear_features(VIF_max=10)
 
-    df_PPG = pd.read_csv('data/PPG_features.csv')
-    df_ECG = pd.read_csv('data/ECG_features.csv')
-    df_PAT = pd.read_csv('data/PAT_features.csv')
-
-    df = pd.concat([df_ECG, df_PPG], axis=1, join="inner")
-    df = pd.concat([df, df_PAT], axis=1, join="inner")
-    df = df.drop("SBP", axis=1)
-    df["BP"] = df_ECG.SBP
-
-    mdl = RegressionModel(
-        dataset=MOLLIE,
-        df=df,
-        eval_method="cv",
-        model_name="SVM",
-        add_demographics=True,
-    )
-    mdl.z_norm_df()
-    mdl.run_model(
-        run_hyper_param_tuning=True,
-        plot_flag=False,
-        num_features=30,
-        do_feat_optimisation=False,
-    )
-
-
-plt.show()
+    # for ii in range(len(BP_est.df['ID'].unique())):

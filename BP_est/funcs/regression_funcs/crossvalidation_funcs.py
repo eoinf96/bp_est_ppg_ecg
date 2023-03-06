@@ -21,13 +21,13 @@ Can implement 10 fold CV, LOSOCV (Example shown)
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
-
-from funcs.regression_funcs import (
-    linear_regression,
-    RF_regression,
-    SVM_regression,
-    feature_selection,
-)
+# from funcs.regression_funcs import (
+#     linear_regression,
+#     RF_regression,
+#     SVM_regression,
+#     feature_selection,
+# )
+from funcs.regression_funcs import *
 import numpy as np
 import matplotlib.pyplot as plt
 def LOSOCV(

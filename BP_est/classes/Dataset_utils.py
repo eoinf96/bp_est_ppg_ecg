@@ -33,13 +33,22 @@ class datasetHandler():
         self.feature_names = feature_names
         self.target_name = target_name
 
+    def __eq__(self, other):
+        ## Check that two datasets are the same
+        if len(self.df.columns.intersection(other.df.columns)) != self.df.shape[1]:
+            raise ValueError('The two dataframes are not the same.')
+        if self.feature_names != other.feature_names:
+            raise ValueError('The two feature_names are not the same.')
+        if self.target_name != other.target_name:
+            raise ValueError('The two target_name are not the same.')
+
     def return_X_Y(self, to_numpy=False, relevant_IDs=None):
         if relevant_IDs is None:
             relevant_IDs = self.df['ID'].unique()
         if to_numpy:
-            return self.df.loc[self.df['ID'].isin(list(relevant_IDs))][self.feature_names].to_numpy(), self.df.loc[self.df['ID'].isin(list(relevant_IDs))][self.target_name].to_numpy()
+            return self.df.loc[self.df['ID'].isin(relevant_IDs)][self.feature_names].to_numpy(), self.df.loc[self.df['ID'].isin(relevant_IDs)][self.target_name].to_numpy()
         else:
-            return self.df.loc[self.df['ID'].isin(list(relevant_IDs))][self.feature_names], self.df.loc[self.df['ID'].isin(list(relevant_IDs))][self.target_name]
+            return self.df.loc[self.df['ID'].isin(relevant_IDs)][self.feature_names], self.df.loc[self.df['ID'].isin(relevant_IDs)][self.target_name]
 
     def drop_collinear_features(self, VIF_max = 10):
         (X, _) = self.return_X_Y(to_numpy=True)
@@ -116,6 +125,9 @@ class BP_est_dataset():
         self.feature_names = self.Original.feature_names
         self.waveform_feature_names = [x for x in feature_names if x not in self.study.get_demographics_names()]
 
+        # Check that the two datasets are for the same thing
+        self.Original == self.Augmented
+
     def upload_study(self, study):
         '''Upload dataset containing demographics.'''
         self.study = study
@@ -167,16 +179,19 @@ class BP_est_dataset():
 
     def ID_iterator(self):
         # Assert no ID!!
-        unique_ids = self.df['ID'].unique()
+        unique_ids = self.Original.df['ID'].unique()
         if self.ID_i is None:
             self.ID_i =unique_ids[0]
         else:
             ii =np.where(unique_ids == self.ID_i)[0][0]
             self.ID_i = unique_ids[ii+1]
 
-    def return_LOSO_train_test_data(self):
-        pass
 
+    def return_LOSO_train_test_data(self):
+        unique_ids = self.Original.df['ID'].unique()
+        (X_train, y_train) = self.Original.return_X_Y(to_numpy=False, relevant_IDs=np.delete(unique_ids, np.argwhere(unique_ids == self.ID_i)))
+        (X_test, y_test) = self.Augmented.return_X_Y(to_numpy=False, relevant_IDs=self.ID_i)
+        return (X_train, X_test, y_train, y_test)
 
     def generate_cv(self, eval_method='LOSO', nFolds = 5):
         '''Initialise CV Generator using the dataset'''

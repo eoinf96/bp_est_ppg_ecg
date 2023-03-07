@@ -45,5 +45,5 @@ if __name__ == "__main__":
     BP_est = BP_est_dataset(df=df, study=MOLLIE)
     BP_est.calibrate_dataset()
     BP_est.drop_collinear_features(VIF_max=10)
-
+    BP_est.return_LOSO_train_test_data()
     # for ii in range(len(BP_est.df['ID'].unique())):

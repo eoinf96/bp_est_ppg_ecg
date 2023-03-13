@@ -1,3 +1,0 @@
-from funcs.regression_funcs.regression_models_funcs import *
-from funcs.regression_funcs import crossvalidation_funcs as crossvalidation_funcs
-from funcs.regression_funcs import feature_selection as feature_selection

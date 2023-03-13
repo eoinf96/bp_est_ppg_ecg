@@ -1,8 +1,6 @@
 %% Example code of feature extraction from the ECG and PPG
 % Please cite the following when using this code base:
-% Finnegan, E., Davidson, S., Harford, M., Jorge, J., Watkinson, Tarassenko, L., \& Villarroel, M. 
-% Features from the photoplethysmogram and electrocardiogram for estimating changes in blood pressure.
-% Submitted to Scientific reports
+% Finnegan, Eoin, et al. "Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure." Scientific Reports 13.1 (2023): 986.
 close all
 clear all
 clc

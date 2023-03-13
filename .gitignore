@@ -3,3 +3,4 @@ venv/
 Feature_extraction/to_refresh_path_do_not_github.m
 Feature_extraction/notes.txt
 BP_est/notes.txt
+*__pycache__/

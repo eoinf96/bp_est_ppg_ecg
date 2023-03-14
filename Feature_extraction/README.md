@@ -1,5 +1,6 @@
 # Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure
 
+This MATLAB toolbox performs feature extraction from the PPG and ECG waveforms. A full description of the features extracted can be found in the [associated publication](docs).
 
 ## Structure
 
@@ -14,7 +15,6 @@
 │   ├──/+waveform/                  # Waveform/timeseries functions
 ├── /example_data 	            # example data  
 ├── example_feature_extraction.m    # tutorial file 
-├── return_configs.m                # configs file 
 └── README.md
 ```
 
@@ -25,22 +25,43 @@
 
 ## Feature extraction
 
-Multiple features were extracted from the PPG and ECG waveforms. 
+Multiple features were extracted from the PPG and ECG waveforms. The below figure provides an example of feature extraction from individual beats of the PPG waveform. 
 <p float="center">
   <img src="../figs/PPG_features.png" width="99%" alt>
   <b>Figure -</b> <em> Overview of the fiducial points detected and some of the features extracted from the PPG waveform for one individual (Male, Age: 24, BMI: 25.1) during the four stages of the study protocol: (a) rest, (b) dose increase, (c) maximum infusion, and (d) washout. Examples of the following features are provided: Crest time (CT), DeltaT, reflection index (RI), width25, width50, slope transit time (STT), A1, A2, Gaussian estimation of
 the transit time of the reflected wave (Gauss RTT) and augmentation index (Gauss AI), slopeb-c and slopeb-d. Acronyms: S - Systolic peak, N - Dicrotic notch, D - Diastolic peak, a-e - waves of the APG. </em>
 </p>
 
-See **`example_feature_extraction.m`** for a tutorial on all feature extraction. 
+## Running the code
+
+See **`example_feature_extraction.m`** for a tutorial of PPG and ECG feature extraction using example signals. 
 
 Toggle:
 ```matlab
+%% Flags
 flags.plot_ppg_ecg_overview = 0;
 flags.plot_ppg_features_overview = 0;
 flags.plot_PAT_overview = 0;
 ```
-to plot feature extraction overviews.
+to plot feature extraction overviews. The following defines a set of configs that were implemented for the associated publication but can be editted at the user's discretion.
+
+```matlab
+%% Options
+configs_ECG.do_HRV_feats = 1;
+
+configs.PPG.fid_point.do_normalise = true;              % T/F to both time and amplitude normalise each PPG beat
+configs.PPG.fid_point.do_fid = true;                    % T/F to detect fiducial points or not
+configs.PPG.fid_point.gauss_continue_points = true;     % T/F to use the results of the previous beat as the initial conditions for the Gaussian decomposition optimisation of the current beat.
+configs.PPG.fid_point.do_e_for_dic = true;              % T/F to use the e-wave of the APG as the location of the dicrotic notch - If False, the Balmer weighting function is implemented
+configs.PPG.fid_point.fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', ...
+        'W', 'f1', 'f2', 'halfpoint', 'tangent'};  
+% configs.PPG.fid_point.fid_pt_names = {'a', 'b', 'c', 'd', 'e', 'f', 's', 'dia', 'dic', ...
+%     'W', 'f1', 'f2', 'halfpoint', 'tangent', 'gauss'};         %   You can include Gaussian points but they take a lot longer to compute.
+    
+configs.window_size = 30;  % The feature window size that we want to compute our average features over
+configs.window_step = 30;  % How often we want to compute our features
+```
+
 
 ## Example data
 

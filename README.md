@@ -1,8 +1,10 @@
 # Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure
 
-This repository contains the supplementary code for feature extraction and subsequent blood pressure (BP) estimation from the photoplethysmogram (PPG) and electrocardiogram (ECG) waveforms. The code can be used to replicate the experiments and suggest further analysis.
+This repository contains the supplementary code for feature extraction and subsequent blood pressure (BP) estimation from the photoplethysmogram (PPG) and electrocardiogram (ECG) waveforms. The code can be used to replicate the experiments and further any analysis.
 
-Note that due to data protection laws, data from the clinical trial used to develop our algorithms cannot be provided - all example data provided in this repository is from an [open source ICU database.](https://mimic.mit.edu/)
+Note that due to data protection laws, data from the clinical trial used to develop our algorithms cannot be provided - any example data provided in this repository is either from independent signal recordings or an [open source ICU database.](https://mimic.mit.edu/)
+
+## Structure
 
 This repository is split into two parts:
 

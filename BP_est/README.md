@@ -1,5 +1,6 @@
 # Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure
 
+This Python codebase performed leave-one-subject-out cross validation (LOSOCV) for BP estimation using the features extracted in [feature extraction](/Feature_extraction) across a number of participants. 
 
 ## Structure
 ``` 
@@ -8,7 +9,7 @@
 │   ├── /Dataset_utils.py      		 # Classes to handle datasets for blood pressure (BP) estimation.
 │   ├── /MOLLIE_session.py               # Class specific to the MOLLIE clinical study -- NO participant identifying information is present in this file
 │   ├── /regression_model_funcs.py       # Regression models
-│   ├── /run_LOSOCV.py      		 # Run Leave One Subject Out (LOSOCV) CV
+│   ├── /run_LOSOCV.py      		 # Run LOSOCV
 ├── /example_data 	                 # example data  
 ├── /tests                               # Unit tests
 ├── requirements.txt                     # configs file 
@@ -16,14 +17,26 @@
 ```
 ## bp_est_ppg_ecg
 
-This repo contains code to estimate BP using features from the PPG and ECG following the methodology detailed below:
+The below figure (from the initial publication) details the process implemented for BP estimation.
 
 <p float="center">
   <img src="../figs/LOSOCV_framework.png" width="99%" alt>
-  <b>Figure -</b> <em> OSchematic of the Delta BP estimation pipeline for each of the proposed models. We extracted features from the PPG and ECG and averaged their values within a window of size 40s centred on times of cuff inflations. We then implemented a hybrid calibration approach such that the proposed models estimate Delta BP from a baseline calibration value determined during the rest period. Data augmentation was implemented to increase the training and validation set size by interpolating between cuff inflations. Models were trained and evaluated in a nested leave-one-subject-out cross-validation (LOSOCV) framework shown here by the iterator j which indicates the test participant for that iteration. Participant j was then removed from the training/ validation set (XAug) for that iteration. </em>
+  <b>Figure -</b> <em> Schematic of the Delta BP estimation pipeline for each of the proposed models. We extracted features from the PPG and ECG and averaged their values within a window of size 40s centred on times of cuff inflations. We then implemented a hybrid calibration approach such that the proposed models estimate Delta BP from a baseline calibration value determined during the rest period. Data augmentation was implemented to increase the training and validation set size by interpolating between cuff inflations. Models were trained and evaluated in a nested leave-one-subject-out cross-validation (LOSOCV) framework shown here by the iterator j which indicates the test participant for that iteration. Participant j was then removed from the training/ validation set (XAug) for that iteration. </em>
 </p>
 
-See **`run_LOSOCV.py`** to run BP estimation using the example data. 
+### Running the code
+
+See **`run_LOSOCV.py`** to run BP estimation using the example data, this script performs the following taks:
+
+- Loads dataset and augmented dataset.
+- Initialises custom **`MOLLIE_session()`** class detailing study attributes.
+- Initialises custom **`BP_est_dataset(df=df, df_aug=df_aug, study=MOLLIE, BP_name=BP_name)`** class.
+  -  **`BP_est_dataset`** handles the backend of managing the main dataset and the augmented dataset, as well as defining the LOSOCV framework, and storing model results.
+- Calibrate dataset using the calibration period.
+- Remove collinear features.
+- Loop through each ID and train LASSO+OLS and RF models for BP estimation.
+- Store the models and model performance metrics.
+- Pickle the results for later analysis of performance metrics.
 
 ## Example data
 

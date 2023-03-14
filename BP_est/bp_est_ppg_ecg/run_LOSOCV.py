@@ -66,13 +66,12 @@ if __name__ == "__main__":
         X_test = sc.transform(X_test)
         ### LASSO + OLS
         cv = BP_est.return_inner_cv()
-        mdl = regression_model_funcs.linear_regression(X_train=X_train, y_train=y_train, method='LASSO', cv=None)
+        mdl = regression_model_funcs.linear_regression(X_train=X_train, y_train=y_train, method='LASSO', cv=cv)
         BP_est.results['LASSO'].update_results(mdl, X_test=X_test, y_test=y_test, X_train=X_train, y_train=y_train)
 
         # ### RF
         cv = BP_est.return_inner_cv()
-        # mdl = regression_model_funcs.RF_regression(X_train=X_train, y_train=y_train, run_hyper_param_tuning=True, cv=cv)
-        mdl = regression_model_funcs.linear_regression(X_train=X_train, y_train=y_train, method=None, cv=None)
+        mdl = regression_model_funcs.RF_regression(X_train=X_train, y_train=y_train, run_hyper_param_tuning=True, cv=cv)
         BP_est.results['RF'].update_results(mdl, X_test=X_test, y_test=y_test, X_train=X_train, y_train=y_train)
 
     BP_est.pickle_class(file_name='../data/BP_est_results')

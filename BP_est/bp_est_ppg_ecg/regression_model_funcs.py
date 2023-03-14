@@ -72,7 +72,7 @@ def SVM_regression(X_train, y_train, model_vars=None, run_hyper_param_tuning=Tru
         epsilon = np.logspace(-3, 3, num=7)
 
         random_grid = {"kernel": kernels, "C": C, "epsilon": epsilon}
-        run_hyperparamter_optimising(random_grid, mdl, cv)
+        run_hyperparameter_optimising(random_grid, mdl, cv)
 
     mdl.fit(X=X_train, y=y_train)
     return mdl
@@ -124,14 +124,14 @@ def RF_regression(X_train, y_train, model_vars=None, run_hyper_param_tuning=True
             "bootstrap": bootstrap,
         }
 
-        mdl = run_hyperparamter_optimising(random_grid, mdl, cv)
+        mdl =  run_hyperparameter_optimising(random_grid, mdl, cv)
 
     mdl.fit(X=X_train, y=y_train)
     return mdl
 
 
 # Function for running hyperparameter optimization
-def run_hyperparameter_optimizing(grid, mdl, cv):
+def run_hyperparameter_optimising(grid, mdl, cv):
     """
     Run hyperparameter optimization for a given model and hyperparameter grid.
 

@@ -22,8 +22,6 @@ import numpy as np
 from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 import pickle
-import joblib
-import copy
 
 class DatasetHandler:
     '''
@@ -39,9 +37,14 @@ class DatasetHandler:
         - feature_names (list of str): A list of names of the columns in the dataframe that contain the feature values.
         - target_name (str): The name of the column in the dataframe that contains the target values.
         '''
+
+        if 'ID' not in df: df['ID'] = df.index
         self.df = df
         self.feature_names = feature_names
         self.target_name = target_name
+
+    def __repr__(self):
+        return f'Dataset(M = {len(self.feature_names)}, y = \'{self.target_name}\')'
 
     def __eq__(self, other):
         '''
@@ -87,6 +90,8 @@ class DatasetHandler:
         return X, y
 
     def drop_collinear_features(self, VIF_max=10):
+        from statsmodels.stats.outliers_influence import variance_inflation_factor
+
         '''
         Removes collinear features from the dataset.
 
@@ -103,8 +108,10 @@ class DatasetHandler:
         X = StandardScaler().fit_transform(X)
 
         while dropping:
-            R0 = np.corrcoef(X.T)
-            VIF = np.diag(np.linalg.inv(R0))
+            # R0 = np.corrcoef(X.T)
+            # VIF = np.diag(np.linalg.inv(R0))
+            VIF = [variance_inflation_factor(X, i) for i in range(X.shape[1])]
+
             if max(VIF) > VIF_max:
                 ii = np.argmax(VIF)
                 X = np.delete(X, ii, 1)
@@ -112,15 +119,13 @@ class DatasetHandler:
             else:
                 dropping = False
 
-
-
 class BP_est_dataset:
     """
     This class implements a dataset for blood pressure (BP) estimation.
     It includes functions to upload data, calibrate data, drop collinear features, and iterate through IDs.
     """
 
-    def __init__(self, study=None, df=None, df_aug=None, BP_name='SBP', add_demographics=True, all_model_names=None):
+    def __init__(self, BP_name='SBP', study=None, df=None, df_aug=None, all_model_names=None):
         """
         Constructor for the BP_est_dataset class.
 
@@ -128,7 +133,6 @@ class BP_est_dataset:
         :param df: A Pandas DataFrame containing the original dataset
         :param df_aug: A Pandas DataFrame containing the augmented dataset
         :param BP_name: A string representing the name of the BP column (default: 'SBP')
-        :param add_demographics: A boolean indicating whether to add demographics (default: True)
         :param all_model_names: A list of strings containing all the model names to use (default: ['LASSO', 'RF'])
         """
 
@@ -136,18 +140,16 @@ class BP_est_dataset:
         # pylint: disable=too-many-instance-attributes
         # pylint: disable=too-many-arguments
         self.BP_name = BP_name
-        self.demo_added = add_demographics
 
         # Add df and dataset
+        self.demo_added = False
         self.Original = None
         self.Augmented = None
         self.waveform_feature_names = None
-        if study is not None:
-            self.upload_study(study=study)
-            if df is not None:
-                if df_aug is None:
-                    df_aug = df
-                self.upload_df(df=df, df_aug=df_aug)
+
+        self.upload_study(study=study)
+        if df_aug is None: df_aug = df
+        self.upload_df(df=df, df_aug=df_aug)
 
         self.ID_i = None
 
@@ -157,13 +159,18 @@ class BP_est_dataset:
         for model_name in all_model_names:
             self.results[model_name] = model_results(model_name=model_name)
 
-    def upload_df(self, df, df_aug):
+    def upload_df(self, df, df_aug=None):
         """
         This function uploads the original and augmented datasets.
 
         :param df: A Pandas DataFrame containing the original dataset
         :param df_aug: A Pandas DataFrame containing the augmented dataset
         """
+        if df_aug is None: df_aug = df
+        # print(df)
+        # print(df_aug)
+        if not isinstance(df, pd.DataFrame) or not isinstance(df_aug, pd.DataFrame):
+            raise TypeError("df must be a Pandas DataFrame")
 
         df_attr_name = {0: 'Original', 1: 'Augmented'}
         for (ii, curr_df) in enumerate([df, df_aug]):
@@ -180,7 +187,7 @@ class BP_est_dataset:
             curr_df = DatasetHandler(df=curr_df, feature_names=feature_names, target_name=self.BP_name)
             setattr(self, df_attr_name[ii], curr_df)
         self.feature_names = self.Original.feature_names
-        self.waveform_feature_names = [x for x in feature_names if x not in self.study.get_demographics_names()]
+        self.waveform_feature_names = [x for x in feature_names if x not in self.study.get_demographics_names()] if self.demo_added else self.feature_names
 
         # Check that the two datasets are for the same thing
         self.Original == self.Augmented
@@ -192,6 +199,8 @@ class BP_est_dataset:
         :param study: A Study object
         """
         self.study = study
+        # Check if study is of class ClinicalStudy
+        if repr(self.study) == 'ClinicalStudyClass': self.demo_added = True
 
     def calibrate_dataset(self, std_flag=False, num_cali=5):
         """
@@ -248,8 +257,7 @@ class BP_est_dataset:
                 curr_df[self.BP_name] = curr_df[self.BP_name] - means[self.BP_name]
 
             # Reapply demographic features
-            if self.demo_added:
-                curr_df = pd.merge(curr_df, df_demo, on='ID')
+            if self.demo_added: curr_df = pd.merge(curr_df, df_demo, on='ID')
 
             # Update Original or Augmented dataset
             if ii == 0:
@@ -268,29 +276,6 @@ class BP_est_dataset:
         self.feature_names = self.Original.feature_names
         self.Augmented.feature_names = self.Original.feature_names
 
-        # iterator over unique IDs in dataset
-        def ID_iterator(self, val=None, restart=False):
-            """
-            Iterator over unique IDs in the dataset.
-
-            Args:
-            - val (int): Value to set the iterator to. If None, will increment the iterator to the next ID in the list.
-            - restart (bool): Whether to restart the iterator from the beginning.
-
-            Returns:
-            - None
-            """
-            if restart:
-                self.ID_i = None
-            if val is None or restart:
-                unique_ids = self.Original.df['ID'].unique()
-                if self.ID_i is None:
-                    self.ID_i = unique_ids[0]
-                else:
-                    ii = np.where(unique_ids == self.ID_i)[0][0]
-                    self.ID_i = unique_ids[ii + 1]
-            else:
-                self.ID_i = val
 
     # iterator over unique IDs in dataset
     def ID_iterator(self, val=None, restart=False):

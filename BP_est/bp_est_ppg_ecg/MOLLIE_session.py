@@ -21,7 +21,17 @@ import numpy as np
 import pandas as pd
 import copy
 
-class MOLLIE_session:
+class ClinicalStudy():
+    """
+    Parent class for all clinical studies
+    """
+    def __init__(self, df=None):
+        self.df = df
+
+    def __repr(self):
+        return 'ClinicalStudyClass'
+
+class MOLLIE_session(ClinicalStudy):
     """
     A class representing a MOLLIE session, containing demographic data
     for multiple participants and methods for selecting and manipulating
@@ -29,12 +39,12 @@ class MOLLIE_session:
     data for each participant due to data protection.
     """
 
-    def __init__(self):
+    def __init__(self, csv_loc = '../data/demographics.csv'):
         """
         Initializes a new MOLLIE_session object by reading in demographic
         data from a CSV file and computing BMI values.
         """
-        self.df = pd.read_csv('../data/demographics.csv')
+        super().__init__(df =pd.read_csv(csv_loc))
         self.df['BMI'] = self.df['Weight'] / (self.df['Height'] / 100) ** 2
 
         # Hidden variables

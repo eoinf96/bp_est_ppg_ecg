@@ -6,8 +6,8 @@ Note that due to data protection laws, data from the clinical trial used to deve
 
 This repository is split into two parts:
 
-1. [Feature extraction](/BP_est) - MATLAB code to extract PPG features, ECG features, and the pulse arrival time (PAT).
-2. [BP estimation](#BP_est) - Python code for BP estimation using the relevant features in a LOSOCV framework.
+1. [Feature extraction](/Feature_extraction) - MATLAB code to extract PPG features, ECG features, and the pulse arrival time (PAT).
+2. [BP estimation](/BP_est) - Python code for BP estimation using the relevant features in a LOSOCV framework.
 
 ## Contributing
 

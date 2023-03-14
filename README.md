@@ -9,14 +9,29 @@ This repository is split into two parts:
 1. [Feature extraction](/Feature_extraction) - MATLAB code to extract PPG features, ECG features, and the pulse arrival time (PAT).
 2. [BP estimation](/BP_est) - Python code for BP estimation using the relevant features in a LOSOCV framework.
 
-## Contributing
-
-If you want to contribute to this project, please create a pull request with your changes. Before submitting a pull request, ensure that all tests pass and the code follows the style guidelines.
 
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
 
+## <a name="cite"/> :clipboard: Citation
+
+If you use this code in your research, please consider citing our paper:
+```
+@article{Finnegan2023,
+               title = {{Features from the photoplethysmogram and the electrocardiogram for estimating changes in blood pressure}},
+               author = {Finnegan, Eoin and Davidson, Shaun and Harford, Mirae and Watkinson, Peter and Tarassenko, Lionel and Villarroel, Mauricio},
+               journal = {Scientific Reports},
+               month = {jan},
+               number = {1}, 
+               pages = {1--20},
+               volume = {13},
+               year = {2023}}
+
+```
+
 ## Contact
 
 If you have any questions or comments, please contact the authors at eoin.finnegan@stx.ox.ac.uk
+
+

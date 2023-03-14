@@ -6,7 +6,7 @@ clear all
 clc
 %% Load data
 load('example_data/ECG.mat', 'ECG');
-load('example_data/PPG_all.mat', 'PPG');
+load('example_data/PPG.mat', 'PPG');
 
 % The ECG and PPG have already been segmented and their sqi is already determined. The code for performing this is propietary at the moment. 
 % All steps for segmenting the ECG and PPG are outlined in the associated
